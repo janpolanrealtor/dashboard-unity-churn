@@ -1,0 +1,12 @@
+definition_version: 2
+entities:
+  unity_churn_dashboard:
+    type: streamlit
+    identifier: unity_churn_dashboard
+    query_warehouse: SNOWFLAKE_LEARNING_WH
+    main_file: app.py
+    artifacts:
+      - environment.yml
+      - app.py
+      - utils/
+      - .streamlit/config.toml

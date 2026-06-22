@@ -1,0 +1,10 @@
+name: unity_churn_dashboard
+channels:
+  - snowflake
+  - nodefaults
+dependencies:
+  - python=3.10
+  - streamlit=1.40
+  - snowflake-connector-python=3.12
+  - pandas=2.2
+  - plotly=5.24

@@ -8,3 +8,20 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Secrets (Zero-Trust Security per constitution)
+.streamlit/secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
