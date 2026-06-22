@@ -1,0 +1,10 @@
+# apps/unity-churn-dashboard/app.yaml
+name: unity-churn-dashboard
+title: "Unity Churn & Asset Performance Dashboard"
+description: "Análisis de probabilidades de churn y rendimiento de modelos de activos para Product Managers."
+owner: "tu.correo@realtor.com"
+type: streamlit
+# OMEK configurará Okta SSO automáticamente basándose en las políticas internas
+access:
+  groups:
+    - active-directory-group-permitido # Ajusta según las políticas de tu equipo

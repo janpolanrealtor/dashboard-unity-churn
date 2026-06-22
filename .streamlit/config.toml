@@ -1,0 +1,7 @@
+# apps/unity-churn-dashboard/.streamlit/config.toml
+[theme]
+primaryColor = "#D92228"          # Rojo Realtor.com (Haven Primary)
+backgroundColor = "#FFFFFF"       # Fondo claro
+secondaryBackgroundColor = "#F4F3F0" # Gris cálido claro de Haven
+textColor = "#3F3B36"             # Haven Charcoal para texto
+font = "sans serif"
