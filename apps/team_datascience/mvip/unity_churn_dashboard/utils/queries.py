@@ -1,6 +1,5 @@
-import streamlit as st
 import pandas as pd
-import snowflake.connector
+import streamlit as st
 
 PRODUCT_MAPPING = {
     "01t3a000004vIdIAAU": "MVIP Legacy",
@@ -10,133 +9,264 @@ PRODUCT_MAPPING = {
 UNITY_PRODUCT_ID = "01t5f000006sGgOAAU"
 
 
-@st.cache_resource
-def init_connection():
-    return snowflake.connector.connect(
-        user=st.secrets["snowflake"]["user"],
-        password=st.secrets["snowflake"]["password"],
-        account=st.secrets["snowflake"]["account"],
-        warehouse=st.secrets["snowflake"]["warehouse"],
-        database="TEAM_DATASCIENCE",
-        schema="PUBLIC",
+def _get_session():
+    try:
+        from snowflake.snowpark.context import get_active_session
+
+        return get_active_session(), "snowpark"
+    except Exception:
+        import snowflake.connector
+
+        cfg = st.secrets["snowflake"]
+        params = {
+            "user": cfg["user"],
+            "account": cfg["account"],
+            "warehouse": cfg["warehouse"],
+            "database": "TEAM_DATASCIENCE",
+            "schema": "PUBLIC",
+        }
+        if "authenticator" in cfg:
+            params["authenticator"] = cfg["authenticator"]
+        else:
+            params["password"] = cfg["password"]
+        return snowflake.connector.connect(**params), "connector"
+
+
+def _run_query(query: str) -> pd.DataFrame:
+    session, mode = _get_session()
+    if mode == "snowpark":
+        return session.sql(query).to_pandas()
+    df = pd.read_sql(query, session)
+    session.close()
+    return df
+
+
+# ── Core Unity churn dataset (latest snapshot per asset) ────────────────────
+_UNITY_CHURN_SQL = """
+WITH latest_churn AS (
+    SELECT
+        a.ASSET_ID,
+        a.CHURN_PROB,
+        a.MOST_IMPORTANT_FEATURE,
+        a.EXPIRY_DATE,
+        a.MONTH_OF_EXPIRY,
+        a.SNAPSHOT_DATE AS PREDICTION_DATE,
+        a.CHURN_FLOW_ID
+    FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY a
+    INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
+        ON a.ASSET_ID = r.ID
+    WHERE r.PRODUCT2ID = '01t5f000006sGgOAAU'
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY a.ASSET_ID ORDER BY a.SNAPSHOT_DATE DESC) = 1
+),
+latest_renewals AS (
+    SELECT
+        ID,
+        ACCOUNTID,
+        PRODUCT2ID,
+        EXPIRING_VALUE_ACV,
+        ROI_PER_LEAD,
+        FULFILLMENT_PCT,
+        TENURE,
+        IS_FULFILLED,
+        IS_COMPETITIVE_MARKET
+    FROM TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS
+    WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY SNAPSHOT_DATE DESC) = 1
+)
+SELECT
+    c.ASSET_ID,
+    c.CHURN_PROB,
+    c.MOST_IMPORTANT_FEATURE,
+    c.EXPIRY_DATE,
+    c.MONTH_OF_EXPIRY,
+    c.PREDICTION_DATE,
+    c.CHURN_FLOW_ID,
+    r.ACCOUNTID,
+    r.PRODUCT2ID,
+    r.EXPIRING_VALUE_ACV,
+    r.ROI_PER_LEAD,
+    r.FULFILLMENT_PCT,
+    r.TENURE,
+    r.IS_FULFILLED,
+    r.IS_COMPETITIVE_MARKET
+FROM latest_churn c
+INNER JOIN latest_renewals r ON c.ASSET_ID = r.ID
+ORDER BY c.CHURN_PROB DESC
+"""
+
+
+@st.cache_data(ttl=3600)
+def _load_base() -> pd.DataFrame:
+    df = _run_query(_UNITY_CHURN_SQL)
+    df["PRODUCT_NAME"] = df["PRODUCT2ID"].map(PRODUCT_MAPPING).fillna("Other Asset")
+    return df
+
+
+@st.cache_data(ttl=3600)
+def load_portfolio_summary() -> dict:
+    df = _load_base()
+    return {
+        "total_assets": len(df),
+        "avg_churn_prob": round(float(df["CHURN_PROB"].mean()), 4),
+        "high_risk_count": int((df["CHURN_PROB"] > 0.7).sum()),
+        "total_acv": float(df["EXPIRING_VALUE_ACV"].sum()),
+    }
+
+
+@st.cache_data(ttl=3600)
+def load_portfolio_accounts() -> pd.DataFrame:
+    return _load_base()
+
+
+@st.cache_data(ttl=3600)
+def load_account_detail(asset_id: str) -> pd.DataFrame:
+    """All snapshots for a single asset, ordered by date for trend chart.
+    Attempts to include SPILLOVER_PCT; silently omits it if the column doesn't exist."""
+    _join = f"""
+    FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY a
+    INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
+        ON a.ASSET_ID = r.ID
+    WHERE a.ASSET_ID = '{asset_id}'
+      AND r.PRODUCT2ID = '01t5f000006sGgOAAU'
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY r.ID ORDER BY r.SNAPSHOT_DATE DESC) = 1
+    ORDER BY a.SNAPSHOT_DATE ASC
+    """
+    try:
+        return _run_query(f"""
+            SELECT
+                a.ASSET_ID, a.CHURN_PROB, a.MOST_IMPORTANT_FEATURE,
+                a.SNAPSHOT_DATE, a.EXPIRY_DATE, a.MONTH_OF_EXPIRY,
+                r.ACCOUNTID, r.EXPIRING_VALUE_ACV, r.ROI_PER_LEAD,
+                r.FULFILLMENT_PCT, r.TENURE, r.IS_FULFILLED,
+                r.IS_COMPETITIVE_MARKET, r.SPILLOVER_PCT
+            {_join}
+        """)
+    except Exception:
+        return _run_query(f"""
+            SELECT
+                a.ASSET_ID, a.CHURN_PROB, a.MOST_IMPORTANT_FEATURE,
+                a.SNAPSHOT_DATE, a.EXPIRY_DATE, a.MONTH_OF_EXPIRY,
+                r.ACCOUNTID, r.EXPIRING_VALUE_ACV, r.ROI_PER_LEAD,
+                r.FULFILLMENT_PCT, r.TENURE, r.IS_FULFILLED,
+                r.IS_COMPETITIVE_MARKET
+            {_join}
+        """)
+
+
+@st.cache_data(ttl=3600)
+def load_feature_distributions() -> dict:
+    """Q1 and Q3 for TENURE and SPILLOVER_PCT across the latest Unity snapshot per asset.
+    Falls back to tenure-only if SPILLOVER_PCT column does not exist."""
+    _with_spillover = """
+    WITH deduped AS (
+        SELECT TENURE, SPILLOVER_PCT
+        FROM TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS
+        WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY SNAPSHOT_DATE DESC) = 1
     )
+    SELECT
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE)        AS TENURE_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE)        AS TENURE_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY SPILLOVER_PCT) AS SPILLOVER_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY SPILLOVER_PCT) AS SPILLOVER_Q3
+    FROM deduped
+    """
+    _tenure_only = """
+    WITH deduped AS (
+        SELECT TENURE
+        FROM TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS
+        WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY SNAPSHOT_DATE DESC) = 1
+    )
+    SELECT
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE) AS TENURE_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE) AS TENURE_Q3
+    FROM deduped
+    """
+    def _safe_float(val):
+        return float(val) if val is not None and str(val) != "nan" else None
+
+    try:
+        df = _run_query(_with_spillover)
+        r = df.iloc[0]
+        return {
+            "TENURE_Q1": float(r["TENURE_Q1"]),
+            "TENURE_Q3": float(r["TENURE_Q3"]),
+            "SPILLOVER_Q1": _safe_float(r.get("SPILLOVER_Q1")),
+            "SPILLOVER_Q3": _safe_float(r.get("SPILLOVER_Q3")),
+        }
+    except Exception:
+        try:
+            df = _run_query(_tenure_only)
+            r = df.iloc[0]
+            return {
+                "TENURE_Q1": float(r["TENURE_Q1"]),
+                "TENURE_Q3": float(r["TENURE_Q3"]),
+                "SPILLOVER_Q1": None,
+                "SPILLOVER_Q3": None,
+            }
+        except Exception:
+            return {
+                "TENURE_Q1": None,
+                "TENURE_Q3": None,
+                "SPILLOVER_Q1": None,
+                "SPILLOVER_Q3": None,
+            }
 
 
-@st.cache_data
-def load_unity_churn_data():
-    conn = init_connection()
+@st.cache_data(ttl=3600)
+def load_pipeline_runs() -> pd.DataFrame:
     query = """
-    WITH unity_assets AS (
-        SELECT a.*
+    WITH unity_runs AS (
+        SELECT
+            a.CHURN_FLOW_ID,
+            a.SNAPSHOT_DATE,
+            a.CHURN_PROB
         FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY a
         INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
             ON a.ASSET_ID = r.ID
         WHERE r.PRODUCT2ID = '01t5f000006sGgOAAU'
-    ),
-    latest_predictions AS (
-        SELECT *
-        FROM unity_assets
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY ASSET_ID ORDER BY SNAPSHOT_DATE DESC) = 1
     )
-    SELECT
-        lp.ASSET_ID,
-        lp.CHURN_PROB,
-        lp.MOST_IMPORTANT_FEATURE,
-        lp.EXPIRY_DATE,
-        lp.MONTH_OF_EXPIRY,
-        r.ACCOUNTID,
-        r.PRODUCT_NAME,
-        r.PRODUCT2ID,
-        r.EXPIRING_VALUE_ACV,
-        r.ROI_PER_LEAD
-    FROM latest_predictions lp
-    INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
-        ON lp.ASSET_ID = r.ID
-    ORDER BY lp.CHURN_PROB DESC
-    """
-    df = pd.read_sql(query, conn)
-    conn.close()
-    df["PRODUCT_NAME"] = df["PRODUCT2ID"].map(
-        PRODUCT_MAPPING
-    ).fillna("Other Asset")
-    return df
-
-
-@st.cache_data
-def load_executive_summary():
-    df = load_unity_churn_data()
-    summary = {
-        "total_assets": len(df),
-        "avg_churn_prob": round(df["CHURN_PROB"].mean(), 4),
-        "high_risk_count": len(df[df["CHURN_PROB"] > 0.7]),
-    }
-    trend = (
-        df.groupby("MONTH_OF_EXPIRY")
-        .agg(avg_churn_prob=("CHURN_PROB", "mean"), asset_count=("ASSET_ID", "count"))
-        .reset_index()
-        .sort_values("MONTH_OF_EXPIRY")
-    )
-    return summary, trend
-
-
-@st.cache_data
-def load_model_performance():
-    conn = init_connection()
-    query = """
     SELECT
         CHURN_FLOW_ID,
         SNAPSHOT_DATE,
-        AUC_SCORE,
-        ACCURACY,
-        PRECISION_SCORE,
-        RECALL_SCORE
-    FROM TEAM_DATASCIENCE.PUBLIC.UNITY_CHURN_MODEL_PERFORMANCE
+        COUNT(*)                                              AS TOTAL_ASSETS,
+        ROUND(AVG(CHURN_PROB), 4)                            AS AVG_CHURN_PROB,
+        ROUND(MEDIAN(CHURN_PROB), 4)                         AS MEDIAN_CHURN_PROB,
+        COUNT(CASE WHEN CHURN_PROB > 0.7 THEN 1 END)         AS HIGH_RISK_COUNT,
+        ROUND(COUNT(CASE WHEN CHURN_PROB > 0.7 THEN 1 END)
+              / NULLIF(COUNT(*), 0), 4)                      AS HIGH_RISK_RATE
+    FROM unity_runs
+    GROUP BY CHURN_FLOW_ID, SNAPSHOT_DATE
     ORDER BY SNAPSHOT_DATE DESC
     """
     try:
-        df = pd.read_sql(query, conn)
-        conn.close()
-        return df
+        return _run_query(query)
     except Exception:
-        conn.close()
         return pd.DataFrame()
 
 
-@st.cache_data
-def load_feature_importance():
-    conn = init_connection()
+@st.cache_data(ttl=3600)
+def load_feature_importance() -> pd.DataFrame:
     query = """
-    WITH unity_assets AS (
-        SELECT a.*
+    WITH latest_churn AS (
+        SELECT
+            a.ASSET_ID,
+            a.CHURN_PROB,
+            a.MOST_IMPORTANT_FEATURE
         FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY a
         INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
             ON a.ASSET_ID = r.ID
         WHERE r.PRODUCT2ID = '01t5f000006sGgOAAU'
-    ),
-    latest_predictions AS (
-        SELECT *
-        FROM unity_assets
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY ASSET_ID ORDER BY SNAPSHOT_DATE DESC) = 1
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY a.ASSET_ID ORDER BY a.SNAPSHOT_DATE DESC) = 1
     )
     SELECT
         MOST_IMPORTANT_FEATURE,
-        COUNT(*) AS asset_count,
-        ROUND(AVG(CHURN_PROB), 4) AS avg_churn_prob
-    FROM latest_predictions
+        COUNT(*)                   AS ASSET_COUNT,
+        ROUND(AVG(CHURN_PROB), 4)  AS AVG_CHURN_PROB
+    FROM latest_churn
     WHERE MOST_IMPORTANT_FEATURE IS NOT NULL
     GROUP BY MOST_IMPORTANT_FEATURE
-    ORDER BY asset_count DESC
+    ORDER BY ASSET_COUNT DESC
     """
-    df = pd.read_sql(query, conn)
-    conn.close()
-    return df
-
-
-@st.cache_data
-def load_filtered_assets(churn_min=0.0, churn_max=1.0, expiry_months=None):
-    df = load_unity_churn_data()
-    mask = df["CHURN_PROB"].between(churn_min, churn_max)
-    if expiry_months and len(expiry_months) > 0:
-        mask &= df["MONTH_OF_EXPIRY"].isin(expiry_months)
-    result = df[mask].head(1000)
-    return result
+    return _run_query(query)

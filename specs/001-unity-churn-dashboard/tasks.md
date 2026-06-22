@@ -31,7 +31,7 @@ description: "Task list for Unity Churn Dashboard feature implementation"
 
 **Purpose**: Project initialization, directory structure, and dependency files
 
-- [ ] T001 Create the monorepo directory structure at `apps/team_datascience/mvip/unity_churn_dashboard/` with subdirectories `utils/` and `.streamlit/`
+- [x] T001 Create the monorepo directory structure at `apps/team_datascience/mvip/unity_churn_dashboard/` with subdirectories `utils/` and `.streamlit/`
 - [ ] T002 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/environment.yml` with Conda dependencies (Python 3.10, streamlit, snowflake-connector-python, pandas, plotly)
 - [ ] T003 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/snowflake.yml` with Streamlit-in-Snowflake deployment configuration per research.md
 - [ ] T004 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/.streamlit/config.toml` with Haven Foundations theme tokens per research.md
@@ -45,11 +45,11 @@ description: "Task list for Unity Churn Dashboard feature implementation"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T006 Create `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py` with the base Snowflake connection function using `st.cache_data` and secrets
-- [ ] T007 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/utils/plotting.py` with shared Plotly chart helpers (brand-styled template per research.md, chart layout defaults)
-- [ ] T008 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/utils/formatting.py` with shared formatting utilities (metric display, number formatting, date formatting)
-- [ ] T009 Create `apps/team_datascience/mvip/unity_churn_dashboard/app.py` with the Streamlit entry point, page config, sidebar layout, and 3-tab structure
-- [ ] T010 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/.streamlit/secrets.toml.example` as a template for local credentials (without real values)
+- [x] T006 Create `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py` with the base Snowflake connection function using `st.cache_data` and secrets
+- [x] T007 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/utils/plotting.py` with shared Plotly chart helpers (brand-styled template per research.md, chart layout defaults)
+- [x] T008 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/utils/formatting.py` with shared formatting utilities (metric display, number formatting, date formatting)
+- [x] T009 Create `apps/team_datascience/mvip/unity_churn_dashboard/app.py` with the Streamlit entry point, page config, sidebar layout, and 3-tab structure
+- [x] T010 [P] Create `apps/team_datascience/mvip/unity_churn_dashboard/.streamlit/secrets.toml.example` as a template for local credentials (without real values)
 
 **Checkpoint**: Foundation ready — user story implementation can now begin in parallel
 
@@ -70,9 +70,9 @@ description: "Task list for Unity Churn Dashboard feature implementation"
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement the Unity-filtered + deduplicated churn query in `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py` using `executive-summary.sql` contract
-- [ ] T014 [US1] Implement KPI card rendering (total assets, avg churn prob, high-risk count) in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
-- [ ] T015 [US1] Implement trend chart of average churn probability over expiry months in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
+- [x] T013 [US1] Implement the Unity-filtered + deduplicated churn query in `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py` using `executive-summary.sql` contract
+- [x] T014 [US1] Implement KPI card rendering (total assets, avg churn prob, high-risk count) in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
+- [x] T015 [US1] Implement trend chart of average churn probability over expiry months in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -92,9 +92,9 @@ description: "Task list for Unity Churn Dashboard feature implementation"
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Implement the model performance query in `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py` using `model-performance.sql` contract (handle empty table gracefully)
-- [ ] T018 [P] [US2] Implement the feature importance query (aggregated from predictions) in `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py`
-- [ ] T019 [US2] Implement Model Performance tab with metrics display and feature importance chart in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
+- [x] T017 [US2] Implement the model performance query in `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py` using `model-performance.sql` contract (handle empty table gracefully)
+- [x] T018 [P] [US2] Implement the feature importance query (aggregated from predictions) in `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py`
+- [x] T019 [US2] Implement Model Performance tab with metrics display and feature importance chart in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -114,10 +114,10 @@ description: "Task list for Unity Churn Dashboard feature implementation"
 
 ### Implementation for User Story 3
 
-- [ ] T021 [US3] Implement the parameterized asset explorer query in `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py` using `asset-explorer.sql` contract with filter parameters
-- [ ] T022 [P] [US3] Implement sidebar filter widgets (churn prob slider, product type multiselect, expiry month picker) in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
-- [ ] T023 [US3] Implement the interactive asset table with 1,000-row cap in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
-- [ ] T024 [US3] Wire sidebar filter state to query parameters and table updates in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
+- [x] T021 [US3] Implement the parameterized asset explorer query in `apps/team_datascience/mvip/unity_churn_dashboard/utils/queries.py` using `asset-explorer.sql` contract with filter parameters
+- [x] T022 [P] [US3] Implement sidebar filter widgets (churn prob slider, product type multiselect, expiry month picker) in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
+- [x] T023 [US3] Implement the interactive asset table with 1,000-row cap in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
+- [x] T024 [US3] Wire sidebar filter state to query parameters and table updates in `apps/team_datascience/mvip/unity_churn_dashboard/app.py`
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -127,10 +127,10 @@ description: "Task list for Unity Churn Dashboard feature implementation"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T025 [P] Document usage instructions in `apps/team_datascience/mvip/unity_churn_dashboard/README.md`
-- [ ] T026 Create `apps/team_datascience/mvip/unity_churn_dashboard/tests/__init__.py` and `conftest.py` with shared test fixtures and mock data
-- [ ] T027 Code cleanup: verify `@st.cache_data` decorator on all query functions, verify 1,000-row limit enforcement, verify empty state handling for all three tabs
-- [ ] T028 Run quickstart.md validation: verify `streamlit run` starts without errors, verify all three tabs render, verify filters work
+- [x] T025 [P] Document usage instructions in `apps/team_datascience/mvip/unity_churn_dashboard/README.md`
+- [ ] T026 Create `apps/team_datascience/mvip/unity_churn_dashboard/tests/__init__.py` and `conftest.py` with shared test fixtures and mock data (OPTIONAL - skipped, tests not requested)
+- [x] T027 Code cleanup: verify `@st.cache_data` decorator on all query functions, verify 1,000-row limit enforcement, verify empty state handling for all three tabs
+- [ ] T028 Run quickstart.md validation: verify `streamlit run` starts without errors, verify all three tabs render, verify filters work (requires Snowflake credentials)
 
 ---
 
