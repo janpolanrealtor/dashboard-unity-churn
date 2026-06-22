@@ -1,0 +1,8 @@
+name: unity_churn_dashboard
+channels:
+  - snowflake
+  - nodefaults
+dependencies:
+  - streamlit
+  - pandas
+  - plotly

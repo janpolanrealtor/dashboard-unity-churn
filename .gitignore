@@ -8,3 +8,27 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Cache directories
+.ruff_cache
+.pytest_cache
+
+# Secrets (Zero-Trust Security per constitution)
+.streamlit/secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+
+# Reference materials — not part of the codebase
+temp recommendations/

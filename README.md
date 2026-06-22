@@ -2,83 +2,103 @@
 
 Streamlit dashboard for visualizing Unity Package asset churn predictions sourced from `TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY` on Snowflake.
 
+**Production URL**: https://app.snowflake.com/FJLKZOB/nca06910/#/streamlit-apps/TEAM_DATASCIENCE.MVIP.UNITY_CHURN_DASHBOARD
+
 ---
 
 ## Overview
 
-This dashboard surfaces machine-learning churn probabilities for Unity Package assets, enabling data-driven renewal interventions. It connects directly to Snowflake, caches query results, and renders interactive Plotly charts styled with Realtor's Haven Foundations design tokens.
+This dashboard surfaces machine-learning churn probabilities for Unity Package assets, enabling data-driven renewal interventions. It connects to Snowflake via a dual-mode session (Snowpark on SiS, `snowflake.connector` locally), caches query results with `st.cache_data`, and renders interactive Plotly charts styled with Realtor's Haven Foundations design system.
 
 ---
 
 ## Tech Stack
 
-| Component              | Choice                    |
-| :--------------------- | :------------------------ |
-| Runtime                | Python 3.10+              |
-| UI Framework           | Streamlit                 |
-| Database Connector     | snowflake-connector-python |
-| Data Manipulation      | pandas                    |
-| Visualization          | Plotly (brand-styled)     |
-| Dependency Manager     | Conda (environment.yml)   |
+| Component              | Choice                          |
+| :--------------------- | :------------------------------ |
+| Runtime                | Python 3.10+                    |
+| UI Framework           | Streamlit                       |
+| Session Mode (SiS)     | Snowpark (`get_active_session`) |
+| Session Mode (Local)   | `snowflake.connector` + Okta SSO|
+| Data Manipulation      | pandas                          |
+| Visualization          | Plotly (Haven-branded)          |
+| Package Manager        | `uv`                            |
+| Linter/Formatter       | Ruff                            |
+| Pre-commit             | pre-commit                      |
+
+---
+
+## Dashboard Layout
+
+| Tab                | Content                                                                 |
+| :----------------- | :---------------------------------------------------------------------- |
+| **Portfolio**      | KPI strip (total assets, avg churn, high-risk count, expiring ACV), signals box, filterable/sortable asset table with risk pills, drill-down panel for individual asset trend + distribution |
+| **Pipeline History** | Pipeline run metrics, trend chart of avg/median churn over time, raw data expander |
+| **Insights**       | Feature importance bar chart, churn probability distribution, driver breakdown table |
 
 ---
 
 ## Directory Structure
 
 ```text
-MoveRDC/omek-apps/
-└── apps/
-    └── team_datascience/
-        └── mvip/
-            └── unity_churn_dashboard/
-                ├── app.py                  # Streamlit entry point
-                ├── environment.yml         # Anaconda environment requirements
-                ├── snowflake.yml           # Snowflake CLI deployment configuration
-                ├── .streamlit/
-                │   └── config.toml         # Theme settings (Haven Foundations)
-                ├── utils/                  # Helper functions (plotting, formatting)
-                └── README.md               # App-level user guide
+apps/team_datascience/mvip/unity_churn_dashboard/
+├── app.py                  # Streamlit entry point (493 lines, Haven CSS)
+├── environment.yml         # Conda env for Snowflake deployment
+├── snowflake.yml           # Snowflake CLI deployment config
+├── CONSTITUTION.md         # Project constitution (authoritative)
+├── .streamlit/
+│   ├── config.toml         # Theme settings (Haven Foundations)
+│   └── secrets.toml        # Local credentials (git-ignored)
+├── utils/
+│   ├── __init__.py
+│   ├── queries.py          # Dual-mode session + 5 cached SQL queries
+│   ├── plotting.py         # 5 Plotly chart builders (Haven tokens)
+│   └── formatting.py       # fmt_currency, fmt_probability, etc.
+└── tests/                  # Test directory (pytest, optional)
 ```
 
 ---
 
 ## Getting Started
 
-### 1. Clone the repository
+### 1. Prerequisites
+
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- Snowflake credentials with access to `TEAM_DATASCIENCE.MVIP` and `TEAM_DATASCIENCE.PUBLIC`
+
+### 2. Clone and install
 
 ```bash
 git clone <repo-url>
-cd unity_churn_dashboard
+cd dashboard_unity_churn
+make install    # or: uv sync
 ```
 
-### 2. Configure credentials
+### 3. Configure local credentials
 
-Create `.streamlit/secrets.toml` with your Snowflake connection details:
+Create `.streamlit/secrets.toml` inside the app directory:
 
 ```toml
-[connections.snowflake]
-account = "..."
-user = "..."
-password = "..."
-role = "PRODUCER_DATASCIENCE_ROLE"
+[snowflake]
+account = "FJLKZOB.nca06910"
+user = "your.email@realtor.com"
 warehouse = "SNOWFLAKE_LEARNING_WH"
-database = "TEAM_DATASCIENCE"
-schema = "MVIP"
+authenticator = "externalbrowser"
 ```
 
-> **Security:** This file is git-ignored. Never commit credentials. Production runs rely on Snowflake environment variables and Okta SSO.
-
-### 3. Create the Conda environment
-
-```bash
-conda env create -f environment.yml
-conda activate unity_churn_dashboard
-```
+> **Security:** This file is git-ignored. Never commit credentials. Production uses Snowflake's native auth via `get_active_session()`.
 
 ### 4. Run the dashboard
 
 ```bash
-streamlit run app.py
+make run       # or: uv run streamlit run apps/team_datascience/mvip/unity_churn_dashboard/app.py
+```
+
+For auto-reload on save:
+
+```bash
+make dev       # --server.runOnSave true
 ```
 
 ---
@@ -87,40 +107,41 @@ streamlit run app.py
 
 ### Schema
 
-The initial assumption of a `TEAM_DATASCIENCE.UNITY` schema was incorrect. The active machine-learning schema is:
-
 ```
-TEAM_DATASCIENCE.MVIP
-```
-
-### Source Table
-
-Raw model predictions live in:
-
-```
-TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY
+TEAM_DATASCIENCE.MVIP       — ML prediction tables
+TEAM_DATASCIENCE.PUBLIC     — Renewal snapshot tables
 ```
 
-| Column                   | Type      | Description                                |
-| :----------------------- | :-------- | :----------------------------------------- |
-| `ASSET_ID`               | VARCHAR   | Unique asset identifier                    |
-| `PREV_START_DATE`        | TIMESTAMP | Current contract start date                |
-| `EXPIRY_DATE`            | TIMESTAMP | Current contract end date                  |
-| `MONTH_OF_EXPIRY`        | TIMESTAMP | Normalised start-of-month of expiry        |
-| `CHURN_PROB`             | FLOAT     | Estimated churn probability                |
-| `MOST_IMPORTANT_FEATURE` | VARCHAR   | Primary driver feature behind prediction   |
-| `CHURN_FLOW_ID`          | VARCHAR   | Metaflow run identifier                    |
-| `SNAPSHOT_DATE`          | TIMESTAMP | Prediction generation timestamp            |
+### Source Tables
 
-### Unity vs. Legacy Filtering
+**`TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY`** — Raw model predictions
 
-The table holds predictions for both **MVIP Legacy** and **Unity Package** assets. To isolate Unity assets, join with the renewals snapshot table:
+| Column                   | Description                                |
+| :----------------------- | :----------------------------------------- |
+| `ASSET_ID`               | Unique asset identifier                    |
+| `CHURN_PROB`             | Estimated churn probability                |
+| `MOST_IMPORTANT_FEATURE` | Primary driver feature                     |
+| `EXPIRY_DATE`            | Contract end date                          |
+| `MONTH_OF_EXPIRY`        | Normalised start-of-month of expiry        |
+| `SNAPSHOT_DATE`          | Prediction generation timestamp            |
+| `CHURN_FLOW_ID`          | Metaflow run identifier                    |
+
+**`TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS`** — Asset metadata
+
+| Column                  | Description                               |
+| :---------------------- | :---------------------------------------- |
+| `ID`                    | Asset ID (joins to ASSET_CHURN_HISTORY)   |
+| `PRODUCT2ID`            | Product identifier (Unity = `01t5f000006sGgOAAU`) |
+| `ACCOUNTID`             | Owning account                            |
+| `EXPIRING_VALUE_ACV`    | Contract value in USD                     |
+| `TENURE`                | Customer tenure in months                 |
+| `IS_FULFILLED`          | Fulfillment status                        |
+
+### Unity Asset Filtering
+
+Join with renewals and filter by `PRODUCT2ID`:
 
 ```sql
-SELECT a.*
-FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY a
-INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
-    ON a.ASSET_ID = r.ASSET_ID
 WHERE r.PRODUCT2ID = '01t5f000006sGgOAAU'  -- Unity Package
 ```
 
@@ -129,7 +150,7 @@ WHERE r.PRODUCT2ID = '01t5f000006sGgOAAU'  -- Unity Package
 Always retrieve the latest prediction per asset:
 
 ```sql
-ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY snapshot_date DESC) = 1
+QUALIFY ROW_NUMBER() OVER (PARTITION BY a.ASSET_ID ORDER BY a.SNAPSHOT_DATE DESC) = 1
 ```
 
 ---
@@ -144,41 +165,58 @@ ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY snapshot_date DESC) = 1
 | Charcoal   | `#3F3B36` | Body text, table text, standard components |
 | Warm Gray  | `#F4F3F0` | Background zones, sidebars, card backdrops |
 
+### Risk Pills
+
+Churn probability is displayed as color-coded pills:
+
+- **High** (>70%): Red background — `pill-high`
+- **Medium** (40-70%): Yellow background — `pill-medium`
+- **Low** (<40%): Green background — `pill-low`
+
 ### Caching
 
-- Decorate database queries with `@st.cache_data` to minimise compute cost.
-- Use parameter-driven caching so filter changes do not re-execute redundant warehouse sweeps.
+- All query functions decorated with `@st.cache_data(ttl=3600)`.
+- Cache invalidated hourly — sufficient for a daily-batch ML pipeline.
 
 ### Row Limits
 
-Streamlit tables must never render more than **1,000 detail rows** at a time. Always push aggregations and sorting down to Snowflake.
+- Portfolio table capped at **200 rows** in UI (topped from query).
+- Asset Explorer capped at **1,000 rows** at query level.
 
 ---
 
 ## Development Workflow
 
-1. Create a feature branch from `main`:
-   ```
-   feature/CAML-1637-unity-churn-dashboard
-   ```
-2. Develop and validate locally using `USER_SANDBOX` and `SNOWFLAKE_LEARNING_WH`.
-3. Open a Pull Request — direct merges to `main` are prohibited.
-4. Deploy to Snowflake's native Streamlit using the **"Create from repository"** workflow.
+```bash
+make lint       # Ruff linting
+make format     # Ruff formatting
+make pre-commit # Run pre-commit hooks
+make test       # Pytest (if tests exist)
+```
 
----
+## Deployment
 
-## Risks and Mitigations
+```bash
+cd apps/team_datascience/mvip/unity_churn_dashboard
+snow streamlit deploy --replace --connection realtor
+```
 
-| Risk                                  | Impact | Mitigation                                                            |
-| :------------------------------------ | :----- | :-------------------------------------------------------------------- |
-| Incorrect asset classification        | High   | Always filter by `PRODUCT2ID` via the renewals snapshot join.         |
-| Duplicate rows in UI                  | Medium | Use `ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY snapshot_date DESC) = 1`. |
-| Slow Streamlit UI load times          | High   | Push aggregations to Snowflake; enforce 1,000-row limit.              |
+Uses the Okta SSO connection `realtor` configured in `~/.config/snowflake/config.toml`.
 
 ---
 
 ## Security
 
-- **Zero-trust principle:** Never commit or hardcode credentials, tokens, or passwords.
-- Local secrets reside exclusively in `.streamlit/secrets.toml` (git-ignored).
-- Production authentication uses Snowflake native environment variables and Okta SSO.
+- **Zero-trust principle:** Never commit or hardcode credentials.
+- Local secrets in `.streamlit/secrets.toml` (git-ignored).
+- Production auth via Snowflake Snowpark `get_active_session()` — no secrets file needed.
+- Local auth via Okta `externalbrowser` — no password stored in config.
+
+---
+
+## References
+
+- [Specification](specs/001-unity-churn-dashboard/spec.md)
+- [Plan & Research](specs/001-unity-churn-dashboard/plan.md)
+- [Data Model](specs/001-unity-churn-dashboard/data-model.md)
+- [Constitution](apps/team_datascience/mvip/unity_churn_dashboard/CONSTITUTION.md) (authoritative)
