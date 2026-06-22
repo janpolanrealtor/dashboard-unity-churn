@@ -9,10 +9,11 @@ dependencies = [
     "plotly>=6.8.0",
     "snowflake-connector-python>=4.6.0",
     "streamlit>=1.58.0",
+    "watchdog>=6.0.0",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "ruff>=0.11",
     "pytest>=8.0",
     "pre-commit>=4.0",
