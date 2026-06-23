@@ -9,7 +9,10 @@ PRODUCT_MAPPING = {
 UNITY_PRODUCT_ID = "01t5f000006sGgOAAU"
 
 
+@st.cache_resource
 def _get_session():
+    """Return (session, mode). Cached for the lifetime of the Streamlit process
+    so externalbrowser auth fires exactly once per local dev session."""
     try:
         from snowflake.snowpark.context import get_active_session
 
@@ -36,9 +39,13 @@ def _run_query(query: str) -> pd.DataFrame:
     session, mode = _get_session()
     if mode == "snowpark":
         return session.sql(query).to_pandas()
-    df = pd.read_sql(query, session)
-    session.close()
-    return df
+    # Use cursor directly to avoid the pandas SQLAlchemy deprecation warning
+    cur = session.cursor()
+    cur.execute(query)
+    cols = [d[0] for d in cur.description]
+    rows = cur.fetchall()
+    cur.close()
+    return pd.DataFrame(rows, columns=cols)
 
 
 # ── Core Unity churn dataset (latest snapshot per asset) ────────────────────
@@ -155,63 +162,82 @@ def load_account_detail(asset_id: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_feature_distributions() -> dict:
-    """Q1 and Q3 for TENURE and SPILLOVER_PCT across the latest Unity snapshot per asset.
-    Falls back to tenure-only if SPILLOVER_PCT column does not exist."""
+    """Q1 and Q3 for all numeric feature columns across the latest Unity snapshot per asset.
+    SPILLOVER_PCT is optional — silently excluded if the column doesn't exist."""
     _with_spillover = """
     WITH deduped AS (
-        SELECT TENURE, SPILLOVER_PCT
+        SELECT TENURE, FULFILLMENT_PCT, ROI_PER_LEAD, EXPIRING_VALUE_ACV, SPILLOVER_PCT
         FROM TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS
         WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
         QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY SNAPSHOT_DATE DESC) = 1
     )
     SELECT
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE)        AS TENURE_Q1,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE)        AS TENURE_Q3,
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY SPILLOVER_PCT) AS SPILLOVER_Q1,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY SPILLOVER_PCT) AS SPILLOVER_Q3
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE)             AS TENURE_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE)             AS TENURE_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY FULFILLMENT_PCT)    AS FULFILLMENT_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY FULFILLMENT_PCT)    AS FULFILLMENT_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ROI_PER_LEAD)       AS ROI_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ROI_PER_LEAD)       AS ROI_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY EXPIRING_VALUE_ACV) AS ACV_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY EXPIRING_VALUE_ACV) AS ACV_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY SPILLOVER_PCT)      AS SPILLOVER_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY SPILLOVER_PCT)      AS SPILLOVER_Q3
     FROM deduped
     """
-    _tenure_only = """
+    _without_spillover = """
     WITH deduped AS (
-        SELECT TENURE
+        SELECT TENURE, FULFILLMENT_PCT, ROI_PER_LEAD, EXPIRING_VALUE_ACV
         FROM TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS
         WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
         QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY SNAPSHOT_DATE DESC) = 1
     )
     SELECT
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE) AS TENURE_Q1,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE) AS TENURE_Q3
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE)             AS TENURE_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE)             AS TENURE_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY FULFILLMENT_PCT)    AS FULFILLMENT_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY FULFILLMENT_PCT)    AS FULFILLMENT_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ROI_PER_LEAD)       AS ROI_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ROI_PER_LEAD)       AS ROI_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY EXPIRING_VALUE_ACV) AS ACV_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY EXPIRING_VALUE_ACV) AS ACV_Q3
     FROM deduped
     """
+
     def _safe_float(val):
         return float(val) if val is not None and str(val) != "nan" else None
 
+    def _extract(r, with_spillover: bool) -> dict:
+        out = {
+            "TENURE_Q1":      _safe_float(r.get("TENURE_Q1")),
+            "TENURE_Q3":      _safe_float(r.get("TENURE_Q3")),
+            "FULFILLMENT_Q1": _safe_float(r.get("FULFILLMENT_Q1")),
+            "FULFILLMENT_Q3": _safe_float(r.get("FULFILLMENT_Q3")),
+            "ROI_Q1":         _safe_float(r.get("ROI_Q1")),
+            "ROI_Q3":         _safe_float(r.get("ROI_Q3")),
+            "ACV_Q1":         _safe_float(r.get("ACV_Q1")),
+            "ACV_Q3":         _safe_float(r.get("ACV_Q3")),
+            "SPILLOVER_Q1":   None,
+            "SPILLOVER_Q3":   None,
+        }
+        if with_spillover:
+            out["SPILLOVER_Q1"] = _safe_float(r.get("SPILLOVER_Q1"))
+            out["SPILLOVER_Q3"] = _safe_float(r.get("SPILLOVER_Q3"))
+        return out
+
+    _empty = {k: None for k in (
+        "TENURE_Q1", "TENURE_Q3", "FULFILLMENT_Q1", "FULFILLMENT_Q3",
+        "ROI_Q1", "ROI_Q3", "ACV_Q1", "ACV_Q3", "SPILLOVER_Q1", "SPILLOVER_Q3",
+    )}
+
     try:
         df = _run_query(_with_spillover)
-        r = df.iloc[0]
-        return {
-            "TENURE_Q1": float(r["TENURE_Q1"]),
-            "TENURE_Q3": float(r["TENURE_Q3"]),
-            "SPILLOVER_Q1": _safe_float(r.get("SPILLOVER_Q1")),
-            "SPILLOVER_Q3": _safe_float(r.get("SPILLOVER_Q3")),
-        }
+        return _extract(df.iloc[0], with_spillover=True)
     except Exception:
         try:
-            df = _run_query(_tenure_only)
-            r = df.iloc[0]
-            return {
-                "TENURE_Q1": float(r["TENURE_Q1"]),
-                "TENURE_Q3": float(r["TENURE_Q3"]),
-                "SPILLOVER_Q1": None,
-                "SPILLOVER_Q3": None,
-            }
+            df = _run_query(_without_spillover)
+            return _extract(df.iloc[0], with_spillover=False)
         except Exception:
-            return {
-                "TENURE_Q1": None,
-                "TENURE_Q3": None,
-                "SPILLOVER_Q1": None,
-                "SPILLOVER_Q3": None,
-            }
+            return _empty
 
 
 @st.cache_data(ttl=3600)

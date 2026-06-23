@@ -108,7 +108,10 @@ dependencies:
 
 `utils/queries.py` implements `_get_session()` which attempts `get_active_session()` first (SiS) and falls back to `snowflake.connector` (local). This is the canonical pattern — never bypass it.
 
+`_get_session()` is decorated with `@st.cache_resource` so the connector is created **once per Streamlit process**. Without this, each cached query function re-opens a new connection and triggers a separate Okta browser popup. The `@st.cache_resource` decorator is the correct Streamlit primitive for shared, non-serialisable objects like database connections.
+
 ```python
+@st.cache_resource
 def _get_session():
     try:
         from snowflake.snowpark.context import get_active_session
@@ -126,6 +129,21 @@ def _get_session():
         else:
             params["password"] = cfg["password"]
         return snowflake.connector.connect(**params), "connector"
+```
+
+For the connector (local) path, queries must use cursor-based fetching — **never `pd.read_sql(query, connector)`**. That triggers a pandas SQLAlchemy deprecation warning because raw connectors are not SQLAlchemy engines:
+
+```python
+def _run_query(query: str) -> pd.DataFrame:
+    session, mode = _get_session()
+    if mode == "snowpark":
+        return session.sql(query).to_pandas()
+    cur = session.cursor()
+    cur.execute(query)
+    cols = [d[0] for d in cur.description]
+    rows = cur.fetchall()
+    cur.close()
+    return pd.DataFrame(rows, columns=cols)
 ```
 
 ### 4.4 Local `.streamlit/secrets.toml` (never committed)

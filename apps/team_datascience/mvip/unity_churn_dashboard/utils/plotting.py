@@ -230,11 +230,19 @@ def plot_quartile_indicator(
     q3_val: float,
     feature_name: str,
     lower_is_better: bool = True,
+    fmt=None,
+    tick_format: str = None,
 ):
     """Compact horizontal quartile range plot (height ~110px).
     Line = IQR axis; triangle markers at Q1/Q3; larger circle for current value.
     Color coding: green end = favorable, red end = risk.
+    fmt: callable for value labels (defaults to {v:,.1f}).
+    tick_format: Plotly d3 format string for the x-axis ticks (e.g. ".0%", "$,.0f").
     """
+    if fmt is None:
+        def fmt(v):
+            return f"{v:,.1f}"
+
     if lower_is_better:
         q1_color, q3_color = GREEN_700, BRAND
     else:
@@ -269,8 +277,8 @@ def plot_quartile_indicator(
                 symbol="triangle-up", size=14, color=q1_color,
                 line=dict(color="#fff", width=1),
             ),
-            name=f"Q1: {q1_val:,.1f}",
-            hovertemplate=f"Q1 (25th pct): {q1_val:,.1f}<extra></extra>",
+            name=f"Q1: {fmt(q1_val)}",
+            hovertemplate=f"Q1 (25th pct): {fmt(q1_val)}<extra></extra>",
             showlegend=True,
         )
     )
@@ -285,8 +293,8 @@ def plot_quartile_indicator(
                 symbol="triangle-up", size=14, color=q3_color,
                 line=dict(color="#fff", width=1),
             ),
-            name=f"Q3: {q3_val:,.1f}",
-            hovertemplate=f"Q3 (75th pct): {q3_val:,.1f}<extra></extra>",
+            name=f"Q3: {fmt(q3_val)}",
+            hovertemplate=f"Q3 (75th pct): {fmt(q3_val)}<extra></extra>",
             showlegend=True,
         )
     )
@@ -308,20 +316,24 @@ def plot_quartile_indicator(
                 symbol="circle", size=18, color=cur_color,
                 line=dict(color="#fff", width=2),
             ),
-            name=f"This asset: {current_val:,.1f}",
-            hovertemplate=f"This asset: {current_val:,.1f}<extra></extra>",
+            name=f"This asset: {fmt(current_val)}",
+            hovertemplate=f"This asset: {fmt(current_val)}<extra></extra>",
             showlegend=True,
         )
     )
 
+    _xaxis = dict(
+        range=[x_min, x_max],
+        showgrid=False, zeroline=False, showline=False,
+        tickfont=dict(size=11, color=GRAY_700),
+    )
+    if tick_format:
+        _xaxis["tickformat"] = tick_format
+
     fig.update_layout(
         **_BASE,
         title=dict(text=feature_name, font=dict(size=13, color=GRAY_1200), x=0),
-        xaxis=dict(
-            range=[x_min, x_max],
-            showgrid=False, zeroline=False, showline=False,
-            tickfont=dict(size=11, color=GRAY_700),
-        ),
+        xaxis=_xaxis,
         yaxis=dict(
             showgrid=False, zeroline=False, showline=False,
             showticklabels=False, range=[0, 1],

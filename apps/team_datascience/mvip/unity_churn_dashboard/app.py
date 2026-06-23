@@ -444,7 +444,7 @@ with tab1:
                         with ch1:
                             fig = churn_trend_chart(detail_df)
                             if fig:
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.plotly_chart(fig, width="stretch")
                             else:
                                 st.info(
                                     "Only one snapshot available for this asset — trend requires multiple dates."
@@ -455,7 +455,7 @@ with tab1:
                                 entity_value=churn_p,
                                 entity_label=selected_asset[:20],
                             )
-                            st.plotly_chart(dist_fig, use_container_width=True)
+                            st.plotly_chart(dist_fig, width="stretch")
 
                         # ── Feature Metrics ──────────────────────────────────
                         st.markdown(
@@ -463,47 +463,82 @@ with tab1:
                             '<div class="feat-metrics-title">Feature Metrics</div>',
                             unsafe_allow_html=True,
                         )
-                        _tenure_val = row.get("TENURE")
-                        _spillover_val = row.get("SPILLOVER_PCT")
 
-                        _fm1, _fm2 = st.columns(2)
-                        with _fm1:
-                            if (
-                                _tenure_val is not None
-                                and feat_dist.get("TENURE_Q1") is not None
-                                and feat_dist.get("TENURE_Q3") is not None
-                            ):
+                        # Each entry: (column_key, label, lower_is_better, fmt_fn, tick_format)
+                        _feat_specs = [
+                            (
+                                "TENURE",
+                                "Tenure (years)",
+                                False,
+                                lambda v: f"{v:.1f}y",
+                                None,
+                                "TENURE_Q1",
+                                "TENURE_Q3",
+                            ),
+                            (
+                                "FULFILLMENT_PCT",
+                                "Fulfillment %",
+                                False,
+                                lambda v: f"{v:.1%}",
+                                ".0%",
+                                "FULFILLMENT_Q1",
+                                "FULFILLMENT_Q3",
+                            ),
+                            (
+                                "ROI_PER_LEAD",
+                                "Agent ROI per Lead",
+                                False,
+                                lambda v: f"{v:.1%}",
+                                ".0%",
+                                "ROI_Q1",
+                                "ROI_Q3",
+                            ),
+                            (
+                                "EXPIRING_VALUE_ACV",
+                                "Expiring ACV",
+                                False,
+                                fmt_currency,
+                                "$,.0f",
+                                "ACV_Q1",
+                                "ACV_Q3",
+                            ),
+                            (
+                                "SPILLOVER_PCT",
+                                "Spillover %",
+                                True,
+                                lambda v: f"{v:.1%}",
+                                ".0%",
+                                "SPILLOVER_Q1",
+                                "SPILLOVER_Q3",
+                            ),
+                        ]
+
+                        for _col_key, _label, _lib, _fmt_fn, _tick_fmt, _q1_key, _q3_key in _feat_specs:
+                            _val = row.get(_col_key)
+                            _q1 = feat_dist.get(_q1_key)
+                            _q3 = feat_dist.get(_q3_key)
+                            if _val is None or _q1 is None or _q3 is None:
+                                continue
+                            _lc, _rc = st.columns([1, 3])
+                            with _lc:
+                                st.markdown(
+                                    f"<div style='padding-top:36px;font-size:13px;"
+                                    f"font-weight:600;color:var(--gray-1000)'>{_label}</div>",
+                                    unsafe_allow_html=True,
+                                )
+                            with _rc:
                                 st.plotly_chart(
                                     plot_quartile_indicator(
-                                        current_val=float(_tenure_val),
-                                        q1_val=feat_dist["TENURE_Q1"],
-                                        q3_val=feat_dist["TENURE_Q3"],
-                                        feature_name="Tenure (months)",
-                                        lower_is_better=False,
+                                        current_val=float(_val),
+                                        q1_val=_q1,
+                                        q3_val=_q3,
+                                        feature_name="",
+                                        lower_is_better=_lib,
+                                        fmt=_fmt_fn,
+                                        tick_format=_tick_fmt,
                                     ),
-                                    use_container_width=True,
+                                    width="stretch",
                                 )
-                            else:
-                                st.caption("Tenure data unavailable")
-
-                        with _fm2:
-                            if (
-                                _spillover_val is not None
-                                and feat_dist.get("SPILLOVER_Q1") is not None
-                                and feat_dist.get("SPILLOVER_Q3") is not None
-                            ):
-                                st.plotly_chart(
-                                    plot_quartile_indicator(
-                                        current_val=float(_spillover_val),
-                                        q1_val=feat_dist["SPILLOVER_Q1"],
-                                        q3_val=feat_dist["SPILLOVER_Q3"],
-                                        feature_name="Spillover %",
-                                        lower_is_better=True,
-                                    ),
-                                    use_container_width=True,
-                                )
-                            else:
-                                st.caption("Spillover % data unavailable")
 
                         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -567,7 +602,7 @@ with tab2:
         )
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        st.plotly_chart(pipeline_history_chart(pipeline_df), use_container_width=True)
+        st.plotly_chart(pipeline_history_chart(pipeline_df), width="stretch")
 
         with st.expander("Raw pipeline run data"):
             st.dataframe(
@@ -578,7 +613,7 @@ with tab2:
                         "HIGH_RISK_RATE": fmt_probability,
                     }
                 ),
-                use_container_width=True,
+                width="stretch",
             )
     else:
         st.info("No pipeline runs found for Unity assets.")
@@ -593,7 +628,7 @@ with tab3:
         st.markdown('<div class="section-eyebrow">Model signals</div>', unsafe_allow_html=True)
         st.markdown('<div class="section-title">Top Churn Drivers</div>', unsafe_allow_html=True)
         if not importance_df.empty:
-            st.plotly_chart(feature_importance_chart(importance_df), use_container_width=True)
+            st.plotly_chart(feature_importance_chart(importance_df), width="stretch")
         else:
             st.info("No feature importance data available.")
 
@@ -603,7 +638,7 @@ with tab3:
             '<div class="section-title">Churn Probability Spread</div>', unsafe_allow_html=True
         )
         if not accounts_df.empty:
-            st.plotly_chart(survival_distribution_chart(accounts_df), use_container_width=True)
+            st.plotly_chart(survival_distribution_chart(accounts_df), width="stretch")
         else:
             st.info("No distribution data available.")
 
@@ -623,6 +658,6 @@ with tab3:
                     "Assets Affected": "{:,}",
                 }
             ),
-            use_container_width=True,
+            width="stretch",
             height=400,
         )
