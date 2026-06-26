@@ -1,158 +1,510 @@
 <!--
   Sync Impact Report
 
-  Version change: (template) → 1.0.0
-  Bump rationale: First concrete fill of template placeholders — no prior version.
-  Modified principles: N/A (initial fill)
+  Version change: 1.0.0 → 2.0.0
+  Bump rationale: Complete rewrite from generic template-based constitution to
+    the project-specific source of truth. Every principle and section replaced
+    with verified, authoritative content from the app-level constitution.
+
+  Modified principles: All 5 generic principles replaced with 8 project-specific
+    absolute rules covering language, security, UPPERCASE columns, technology
+    stack, dual-mode architecture, design tokens, charting discipline, and
+    development workflow.
+
   Added sections:
-    - Core Principles (×5): Language Rule, Zero-Trust Security, Technology Stack
-      Compliance, UI/UX Design Standards (Haven Foundations), Development & Git Workflow
-    - Database Architecture & Data Standards
-    - Quality Gates & Constraints
-    - Governance
-  Removed sections: N/A
+    - 1. Project Identity
+    - 4. Snowflake Environment Architecture — Dual-Mode Pattern
+    - 6. Verified Snowflake Schema (feature taxonomy, quartiles, anomalies)
+    - 7. Design System — Haven Foundations
+    - 8. App Structure — Three Tabs
+    - 9. Charting Rules
+    - 10. Data Loading — Caching Rules
+    - 11. Deployment Checklist
+    - 13. Known Limitations
+    - 14. Governance
+
+  Removed sections: N/A (all content replaced in-place)
+
   Templates requiring updates:
-    - .specify/templates/plan-template.md   ✅ already aligned (has Constitution Check)
-    - .specify/templates/spec-template.md   ✅ already aligned
-    - .specify/templates/tasks-template.md   ✅ already aligned
-    - .specify/templates/commands/*.md       ✅ no files (empty dir)
-    - README.md                              ✅ already updated
-  Follow-up TODOs:
-    - RATIFICATION_DATE: needs manual entry
+    - .specify/templates/plan-template.md         ✅ already aligned
+    - .specify/templates/spec-template.md         ✅ already aligned
+    - .specify/templates/tasks-template.md        ✅ already aligned
+    - .specify/templates/checklist-template.md    ✅ already aligned
+    - README.md                                    ✅ already aligned
+
+  Follow-up TODOs: None
 -->
 
-# Unity Churn Dashboard Constitution
+# Unity Churn Dashboard — Project Constitution
 
-## Core Principles
-
-### I. Language Rule
-
-All code, SQL queries, schema definitions, inline comments, commit
-messages, and user-facing text inside the dashboard MUST be written in
-English. No Spanish words may exist in any configuration, repository, or
-database files.
-
-Rationale: Ensures team-wide readability and consistent documentation
-across Realtor's multilingual organization.
-
-### II. Zero-Trust Security
-
-Never commit or hardcode credentials, private tokens, or passwords to
-Git. Local credentials MUST reside exclusively inside
-`.streamlit/secrets.toml`, which MUST be ignored by the version control
-system. Production runs MUST rely on Snowflake's native environment
-variables and Okta SSO integrations.
-
-### III. Technology Stack Compliance
-
-The project MUST adhere to the following stack:
-- **Runtime**: Python 3.10+
-- **UI Framework**: Streamlit
-- **Database Connector**: snowflake-connector-python
-- **Data Manipulation**: pandas
-- **Visualization**: Plotly (explicitly formatted with Realtor brand
-  styling)
-- **Dependency Manager**: Conda via `environment.yml`
-
-All dependencies MUST be declared in both `pyproject.toml` and
-`environment.yml`. The Conda environment is required for Snowflake-native
-deployments.
-
-### IV. UI/UX Design Standards (Haven Foundations)
-
-The Streamlit interface MUST match Realtor's design tokens:
-
-| Token      | Hex       | Usage                                     |
-| :--------- | :-------- | :---------------------------------------- |
-| Accent Red | `#D92228` | Main headers, risk highlights, chart categories |
-| Charcoal   | `#3F3B36` | Body text, table text, standard components |
-| Warm Gray  | `#F4F3F0` | Background zones, sidebars, card backdrops |
-
-Caching: Database queries MUST be cached using Streamlit's
-`@st.cache_data` decorator with parameter-driven keys so filters do not
-re-execute redundant warehouse sweeps.
-
-Row Limits: Streamlit tables MUST NOT render more than 1,000 detail
-rows at a time. Aggregations, pagination, or strict filters MUST be used
-to ensure browser performance.
-
-### V. Development & Git Workflow
-
-Development MUST take place on dedicated feature branches following the
-pattern `feature/CAML-###-descriptive-name`. Direct merges to `main` are
-PROHIBITED — all code MUST be reviewed via Pull Request.
-
-Local validation MUST use the `USER_SANDBOX` database and the
-`SNOWFLAKE_LEARNING_WH` warehouse before pushing changes.
-
-Production deployments MUST target Snowflake's native Streamlit
-interface using the "Create from repository" workflow.
+> **Authoritative version.** All contributors, human and automated agents alike, must follow this
+> document. The root-level `CONSTITUTION.md` is superseded by this file.
+> This file lives at `.specify/memory/constitution.md` and is the SDD (Specify-Driven
+> Development) agent constitution for this project.
 
 ---
 
-## Database Architecture & Data Standards
+## 1. Project Identity
 
-The active machine-learning schema is `TEAM_DATASCIENCE.MVIP` (the
-initial assumption of a `TEAM_DATASCIENCE.UNITY` schema is incorrect).
-The master prediction table is
-`TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY`.
-
-### Unity vs. Legacy Asset Filtering
-
-The raw prediction table contains predictions for both MVIP Legacy and
-Unity Package assets but does not persist the `PRODUCT2ID` column.
-Unity Package assets (`01t5f000006sGgOAAU`) MUST be isolated via an
-`INNER JOIN` with
-`TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS`.
-
-### Deduplication
-
-All queries MUST use `ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY
-snapshot_date DESC) = 1` to isolate only the latest prediction per
-asset.
-
-### Performance
-
-All aggregations MUST be pushed down to the Snowflake engine. Loading
-large raw datasets into Streamlit memory is PROHIBITED.
+| Field | Value |
+|---|---|
+| **App name** | Unity Churn Dashboard |
+| **Team** | Team DataScience — MVIP |
+| **Production URL** | `https://app.snowflake.com/FJLKZOB/nca06910/#/streamlit-apps/TEAM_DATASCIENCE.MVIP.UNITY_CHURN_DASHBOARD` |
+| **Git repo** | `janpolanrealtor/dashboard-unity-churn` (personal GitHub — corporate org `MoveRDC` denied at creation time) |
+| **Branch strategy** | `main` is protected. All work happens on named branches (e.g. `001-unity-churn-dashboard`). PRs required. |
+| **Deployment method** | Snowflake CLI (`snow streamlit deploy --replace --connection realtor`) run from the app directory |
 
 ---
 
-## Quality Gates & Constraints
+## 2. Absolute Rules
 
-### Directory Structure
+### 2.1 Language
 
-The project MUST adhere to Realtor's subdirectory monorepo layout.
-Dumping files at the root of the repository is PROHIBITED.
+All code, SQL, comments, commit messages, and user-facing text must be written in **English**. No Spanish words in any file tracked by Git.
 
-```text
-MoveRDC/omek-apps/
+### 2.2 Zero-Trust Security
+
+- **Never commit credentials, tokens, or passwords.** Not even in comments.
+- Local secrets live exclusively in `.streamlit/secrets.toml`, which is gitignored.
+- Production uses `get_active_session()` (no credentials at all inside Snowflake Streamlit).
+- The folders `temp recommendations/` and any subfolder inside it (`clv-prototype`, `Haven Design System`, etc.) **must never be committed**. They contain proprietary design reference materials. The `.gitignore` entry `temp recommendations/` is load-bearing — never remove it.
+
+### 2.3 English Column Names Everywhere
+
+Snowflake returns **all column names in UPPERCASE** via both `session.sql().to_pandas()` and `pd.read_sql()`. Every pandas operation that references a column by name must use uppercase strings (e.g. `df["CHURN_PROB"]`, not `df["churn_prob"]`). SQL aliases must also be uppercase for consistency.
+
+---
+
+## 3. Repository Layout
+
+```
+dashboard_unity_churn/               ← git root
+├── .gitignore                       ← includes "temp recommendations/" (never remove)
+├── Makefile                         ← make dev / make run / make test / make lint
+├── pyproject.toml                   ← uv/ruff config + dev dependencies
+├── uv.lock                          ← lockfile (gitignored — generated by uv)
+├── CONSTITUTION.md                  ← root stub (deprecated, points here)
+├── README.md
+│
 └── apps/
     └── team_datascience/
         └── mvip/
-            └── unity_churn_dashboard/
-                ├── app.py                  # Streamlit entry point
-                ├── environment.yml         # Anaconda environment
-                ├── snowflake.yml           # Snowflake CLI config
+            └── unity_churn_dashboard/         ← THE APP ROOT
+                ├── app.py                     ← Streamlit entry point (single file)
+                ├── environment.yml            ← SiS package manifest (Conda / snowflake channel)
+                ├── snowflake.yml              ← Snowflake CLI deploy config (definition_version: 2)
+                ├── CONSTITUTION.md            ← Detailed app-level constitution
+                │
                 ├── .streamlit/
-                │   └── config.toml         # Theme settings
-                ├── utils/                  # Helper functions
-                └── README.md               # User guide
+                │   ├── config.toml            ← Haven theme tokens for local dev
+                │   └── secrets.toml           ← LOCAL ONLY — gitignored
+                │
+                ├── utils/
+                │   ├── __init__.py
+                │   ├── queries.py             ← All Snowflake SQL + dual-env session logic
+                │   ├── plotting.py            ← All Plotly chart functions (Haven tokens)
+                │   └── formatting.py          ← fmt_currency / fmt_probability / fmt_tenure etc.
+                │
+                └── tests/                     ← pytest suite (empty — needs filling)
 ```
 
-### PR Review Gate
-
-Every PR MUST verify compliance with this constitution before merge.
-
-### Complexity Tracking
-
-When a constitution check produces violations, the plan's Complexity
-Tracking table MUST document: (1) the violated principle, (2) why the
-violation is necessary, and (3) why a simpler alternative was rejected.
+The monorepo path `apps/team_datascience/mvip/unity_churn_dashboard/` mirrors the intended corporate layout in `MoveRDC/omek-apps`. Dumping files at the repo root is prohibited.
 
 ---
 
-## Governance
+## 4. Snowflake Environment Architecture — Dual-Mode Pattern
+
+This is the single most important design constraint in the project. The app runs in two different environments and must handle both transparently.
+
+### 4.1 Production: Streamlit in Snowflake (SiS)
+
+- The app runs **natively inside Snowflake's compute**.
+- Authentication is automatic — `get_active_session()` returns a live session with no credentials needed.
+- `snowflake-connector-python` is **not available** inside SiS and must not be listed in `environment.yml`.
+- `environment.yml` declares only the packages the app needs at runtime. `python` itself is **not a package** — it is the runtime. Never list `python` or `snowflake-connector-python` in `environment.yml`.
+- All packages must come from the `snowflake` conda channel. **No version pins.** SiS resolves versions internally and will reject pinned specs with a "Packages not found" error.
+
+```yaml
+# environment.yml — correct form
+name: unity_churn_dashboard
+channels:
+  - snowflake
+  - nodefaults
+dependencies:
+  - streamlit
+  - pandas
+  - plotly
+```
+
+### 4.2 Local Development
+
+- Session is obtained via `snowflake.connector.connect()` using credentials from `.streamlit/secrets.toml`.
+- The corporate account (`fjlkzob-nca06910`) uses **Okta SSO**. Password authentication always fails with error `250001: Incorrect username or password`. The only working authenticator is `externalbrowser`.
+- `make dev` runs `uv run streamlit run apps/team_datascience/mvip/unity_churn_dashboard/app.py`.
+
+### 4.3 The Dual-Mode Session Function
+
+`utils/queries.py` implements `_get_session()` which attempts `get_active_session()` first (SiS) and falls back to `snowflake.connector` (local). This is the canonical pattern — never bypass it.
+
+`_get_session()` is decorated with `@st.cache_resource` so the connector is created **once per Streamlit process**. Without this, each cached query function re-opens a new connection and triggers a separate Okta browser popup. The `@st.cache_resource` decorator is the correct Streamlit primitive for shared, non-serialisable objects like database connections.
+
+```python
+@st.cache_resource
+def _get_session():
+    try:
+        from snowflake.snowpark.context import get_active_session
+        return get_active_session(), "snowpark"
+    except Exception:
+        import snowflake.connector
+        cfg = st.secrets["snowflake"]
+        params = {
+            "user": cfg["user"], "account": cfg["account"],
+            "warehouse": cfg["warehouse"],
+            "database": "TEAM_DATASCIENCE", "schema": "PUBLIC",
+        }
+        if "authenticator" in cfg:
+            params["authenticator"] = cfg["authenticator"]
+        else:
+            params["password"] = cfg["password"]
+        return snowflake.connector.connect(**params), "connector"
+```
+
+For the connector (local) path, queries must use cursor-based fetching — **never `pd.read_sql(query, connector)`**. That triggers a pandas SQLAlchemy deprecation warning because raw connectors are not SQLAlchemy engines:
+
+```python
+def _run_query(query: str) -> pd.DataFrame:
+    session, mode = _get_session()
+    if mode == "snowpark":
+        return session.sql(query).to_pandas()
+    cur = session.cursor()
+    cur.execute(query)
+    cols = [d[0] for d in cur.description]
+    rows = cur.fetchall()
+    cur.close()
+    return pd.DataFrame(rows, columns=cols)
+```
+
+### 4.4 Local `.streamlit/secrets.toml` (never committed)
+
+```toml
+[snowflake]
+account       = "fjlkzob-nca06910"
+user          = "jan.polanco.contractor@realtor.com"
+authenticator = "externalbrowser"
+role          = "PRODUCER_DATASCIENCE_ROLE"
+warehouse     = "SNOWFLAKE_LEARNING_WH"
+database      = "TEAM_DATASCIENCE"
+schema        = "MVIP"
+```
+
+The `[snowflake]` section header must match the `st.secrets["snowflake"]` key exactly. A mismatch (e.g. `[connections.snowflake]`) causes a `KeyError` at runtime.
+
+---
+
+## 5. Snowflake CLI Configuration
+
+Connection named `realtor` in `~/Library/Application Support/snowflake/config.toml`:
+
+```toml
+[connections.realtor]
+account       = "fjlkzob-nca06910"
+user          = "jan.polanco.contractor@realtor.com"
+authenticator = "externalbrowser"
+role          = "PRODUCER_DATASCIENCE_ROLE"
+warehouse     = "SNOWFLAKE_LEARNING_WH"
+database      = "TEAM_DATASCIENCE"
+schema        = "MVIP"
+```
+
+Deploy command (run from `apps/team_datascience/mvip/unity_churn_dashboard/`):
+
+```bash
+snow streamlit deploy --replace --connection realtor
+```
+
+The `snowflake.yml` is required in the working directory. Running the command from the repo root fails with "Cannot find project definition".
+
+---
+
+## 6. Verified Snowflake Schema
+
+These are the **only** two tables the dashboard reads. Schema was verified via `INFORMATION_SCHEMA.COLUMNS` queries during development.
+
+### 6.1 `TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY`
+
+| Column | Type | Notes |
+|---|---|---|
+| `ASSET_ID` | VARCHAR | Salesforce asset ID |
+| `PREV_START_DATE` | DATE | |
+| `EXPIRY_DATE` | DATE | Also present in MVIP_ASSET_RENEWALS_SNAPSHOTS — must be aliased |
+| `MONTH_OF_EXPIRY` | NUMBER | Also present in the other table — must be aliased |
+| `CHURN_PROB` | FLOAT | 0.0 – 1.0 churn probability |
+| `MOST_IMPORTANT_FEATURE` | VARCHAR | Top SHAP feature name |
+| `CHURN_FLOW_ID` | VARCHAR | Pipeline run identifier |
+| `SNAPSHOT_DATE` | DATE | Also present in the other table — must be aliased |
+
+### 6.2 `TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS`
+
+| Column | Type | Notes |
+|---|---|---|
+| `ID` | VARCHAR | Joins to `ASSET_CHURN_HISTORY.ASSET_ID` |
+| `ACCOUNTID` | VARCHAR | Salesforce account ID |
+| `PRODUCT2ID` | VARCHAR | Product SKU ID. Unity = `01t5f000006sGgOAAU` |
+| `EXPIRING_VALUE_ACV` | FLOAT | Annual contract value expiring |
+| `ROI_PER_LEAD` | FLOAT | Agent ROI metric |
+| `FULFILLMENT_PCT` | FLOAT | 0.0 – 1.0 |
+| `TENURE` | FLOAT | Years as customer |
+| `IS_FULFILLED` | BOOLEAN | |
+| `IS_COMPETITIVE_MARKET` | BOOLEAN | |
+| `SNAPSHOT_DATE` | DATE | Must be aliased when joining |
+| `EXPIRY_DATE` | DATE | Must be aliased when joining |
+| `MONTH_OF_EXPIRY` | NUMBER | Must be aliased when joining |
+| `SPILLOVER_PCT` | FLOAT | Confirmed at ordinal position 96; 0.0–1.0; lower is better for churn risk |
+| `FINAL_RATECARD` | FLOAT | Can be 0.0; causes `DISCOUNT_PCT` to compute as `-Infinity` — see §6.9 |
+| `DISCOUNT_PCT` | FLOAT | Derived column; can be `-Infinity` when `FINAL_RATECARD = 0.0` — sanitize in Python |
+| *(~106 more columns — 112 total)* | | Available but not currently used; 5 feature families documented in §6.8 |
+
+### 6.3 Tables That Do NOT Exist
+
+`TEAM_DATASCIENCE.UNITY_CHURN_MODEL_PERFORMANCE` — does not exist anywhere in the database. Any future "Model Performance" tab must derive its content from `ASSET_CHURN_HISTORY` by grouping on `CHURN_FLOW_ID` + `SNAPSHOT_DATE`.
+
+### 6.4 Unity Product Filter
+
+Unity Package assets are identified by:
+```sql
+WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
+```
+
+This filter must be applied in every query. Without it, results include MVIP Legacy and other product lines.
+
+### 6.5 Deduplication Pattern
+
+Both tables have multiple snapshots per asset. Always use `QUALIFY ROW_NUMBER()` to get the latest:
+
+```sql
+QUALIFY ROW_NUMBER() OVER (PARTITION BY ASSET_ID ORDER BY SNAPSHOT_DATE DESC) = 1
+```
+
+### 6.6 Column Ambiguity in JOINs
+
+`ASSET_CHURN_HISTORY` and `MVIP_ASSET_RENEWALS_SNAPSHOTS` both contain `EXPIRY_DATE`, `MONTH_OF_EXPIRY`, and `SNAPSHOT_DATE`. When joining, every one of these must be aliased explicitly — Snowflake will error otherwise. Pattern used:
+
+```sql
+a.SNAPSHOT_DATE AS PREDICTION_DATE  -- from ASSET_CHURN_HISTORY
+-- do NOT select r.SNAPSHOT_DATE unless you alias it distinctly
+```
+
+### 6.7 Columns That Do NOT Exist
+
+`MVIP_ASSET_RENEWALS_SNAPSHOTS` does not have a `PRODUCT_NAME` column. Product names are derived in Python via a mapping dict:
+
+```python
+PRODUCT_MAPPING = {
+    "01t3a000004vIdIAAU": "MVIP Legacy",
+    "01t5f000006sGgOAAU": "Unity Package",
+}
+df["PRODUCT_NAME"] = df["PRODUCT2ID"].map(PRODUCT_MAPPING).fillna("Other Asset")
+```
+
+### 6.8 Feature Family Taxonomy (112 Columns)
+
+`MVIP_ASSET_RENEWALS_SNAPSHOTS` contains 112 confirmed columns organized into five families:
+
+| Family | Key Columns |
+|---|---|
+| **Financial & Discount** | `EXPIRING_VALUE_ACV`, `CURRENTACV`, `FINAL_RATECARD`, `DISCOUNT_PCT`, `DISCOUNT_PCT2`, `DISCOUNT_PCT3` |
+| **Lead Quality & Budgets** | `AVG_BUDGET`, `AVG_NON_LEASE_BUDGET`, `PCT_HIGH_INTENT_FINANCING_LEADS`, `PCT_HIGH_URGENCY_LIKELIHOOD_LEADS`, `PCT_HIGH_VALUE_PRICE_LEADS`, `PCT_SUB_150K_PRICE_LEADS` |
+| **Lead Delivery & Pollution** | `ASSET_TOTAL_DELIVERED`, `ASSET_TOTAL_LEASE_DELIVERED`, `ASSET_PCT_LEASE_DELIVERED`, `LIVE_TRANSFER_PCT`, `SPILLOVER_PCT` |
+| **Agent Behavioral** | `NUM_AGENTS`, `LEADS_PER_AGENT`, `AVG_SEC_TO_CLAIM_WINNER`, `AVG_DISPATCHES_SENT` |
+| **Sales Performance** | `TOTAL_TRANSACTIONS`, `ACTUAL_CLOSES`, `ACTUAL_CLOSE_RATE`, `PREDICTED_CLOSES`, `PREDICTED_CLOSE_RATE` |
+
+`AVG_SEC_TO_CLAIM_WINNER` (how fast agents claim leads) is a critical engagement signal.
+
+### 6.9 Known Data Anomalies
+
+**`DISCOUNT_PCT` = `-Infinity`:** When `FINAL_RATECARD = 0.0` (division by zero in the pipeline), `DISCOUNT_PCT` is stored as `-Infinity`. All DataFrames must be sanitized after retrieval:
+
+```python
+import numpy as np
+df = df.replace([np.inf, -np.inf], np.nan)
+```
+
+All formatters in `utils/formatting.py` must return `"—"` when encountering `NaN` or `None`.
+
+**Negative delivery counts:** `ZONE_TOTAL_DELIVERED` can be negative (e.g. `-23338`) due to SFDC transaction reversals. Display absolute values or handle gracefully in UI text.
+
+### 6.10 SHAP Feature Taxonomy (45 Drivers)
+
+The Unity Churn model outputs 45 distinct `MOST_IMPORTANT_FEATURE` values. They map to four user-facing categories:
+
+| Category | Example Values |
+|---|---|
+| **Tenure & Relationship** | `tenure`, `ct_successful_coaching_cases_by_account` |
+| **Fulfillment & Volume** | `sqrt_total_leads`, `fulfillment_rate` |
+| **Lead Quality** | `avg_budget`, `spillover_pct_of_live`, `live_transfer_pct`, `standardize(live_transfer_pct)` |
+| **Financial Performance** | `standardize(roi)`, `actual_ppl`, `expiring_acv` |
+
+Raw feature names include transformations (e.g. `standardize(live_transfer_pct)`, `sqrt_total_leads`) and interaction terms (e.g. `ct_successful_coaching_cases_by_account, sqrt_total_leads`).
+
+### 6.11 Verified Quartile Thresholds (Feature Metrics Range Indicators)
+
+These exact percentile values were computed via `PERCENTILE_CONT` from the production table using the Unity filter and latest-snapshot deduplication. They are the authoritative reference for the quartile indicator chart in the asset drill-down.
+
+| Feature | Column | Q1 (25th pct) | Median (50th pct) | Q3 (75th pct) | Directional Logic |
+|---|---|---|---|---|---|
+| Tenure | `TENURE` | `3.0` years | `5.0` years | `9.0` years | Higher is better |
+| Fulfillment % | `FULFILLMENT_PCT` | `1.105` (110.5%) | `1.312` (131.2%) | `1.517` (151.7%) | Higher is better |
+| Agent ROI per Lead | `ROI_PER_LEAD` | `-0.357` (-35.7%) | `-0.099` (-9.9%) | `0.243` (24.3%) | Higher is better |
+| Expiring ACV | `EXPIRING_VALUE_ACV` | `41962.80` | `99975.60` | `144441.72` | Higher is better |
+| Spillover % | `SPILLOVER_PCT` | `0.045` (4.5%) | `0.099` (9.9%) | `0.154` (15.4%) | **Lower is better** |
+
+**Spillover interpretation:** < 4.5% = excellent position (low churn risk); > 15.4% = high-risk zone (customer friction likely elevating churn probability). The directional logic is inverted relative to all other metrics — Q1 color = green, Q3 color = red.
+
+`SPILLOVER_PCT` is confirmed at ordinal position 96 in `MVIP_ASSET_RENEWALS_SNAPSHOTS`. The try/except fallback in `load_account_detail()` and `load_feature_distributions()` must be removed — query this column directly with no defensive fallback.
+
+---
+
+## 7. Design System — Haven Foundations
+
+Design tokens are injected via `st.markdown()` in `app.py` since SiS does not support external CSS files. All Plotly chart functions in `utils/plotting.py` use the same tokens as raw hex values (CSS variables are not accessible from Python).
+
+### 7.1 Color Tokens
+
+| Token | Hex | Usage |
+|---|---|---|
+| `--brand` | `#D92228` | Realtor Red — headers, high-risk indicators, primary chart series |
+| `--gray-1200` | `#1A1816` | Near-black — primary text, chart axis labels |
+| `--gray-1000` | `#3F3B36` | Charcoal — body text, standard chart bars |
+| `--gray-700` | `#726A60` | Labels, secondary text |
+| `--gray-200` | `#E9E7E4` | Card borders, gridlines |
+| `--gray-100` | `#F2F0EF` | Card backgrounds |
+| `--gray-50` | `#F8F7F7` | App background |
+| `--green-700` | `#46A758` | Low-risk indicators |
+| `--green-900` | `#2A7E3B` | Low-risk text |
+| `--red-100` | `#FEE2E3` | High-risk band fills |
+| `--yellow-200` | `#FFF2D0` | Medium-risk backgrounds |
+| `--yellow-900` | `#685700` | Medium-risk text |
+| `--blue-800` | `#15459A` | Distribution reference lines (Mean) |
+| `TEAL_700` | `#008583` | Distribution reference lines (Median) |
+
+### 7.2 Typography
+
+Primary font: `"Galano Grotesque Alt"` falling back to `"Inter"` then `-apple-system, sans-serif`. Google Fonts `Inter` is imported for fallback.
+
+### 7.3 CSS Architecture
+
+The CSS block injected in `app.py` defines:
+- `:root` — all CSS custom properties (tokens)
+- `.haven-header` — sticky top nav bar (56px, white, brand red logo)
+- `.kpi-grid` — 4-column CSS grid for KPI cards
+- `.kpi-card` / `.kpi-label` / `.kpi-value` / `.kpi-value.danger` — KPI tile system
+- `.pill` / `.pill-high` / `.pill-medium` / `.pill-low` — risk status badges
+- `.portfolio-table` — custom HTML table (not `st.dataframe`) for the asset list
+- `.detail-header` / `.detail-breadcrumb` / `.detail-title` — drill-down header
+- `.section-eyebrow` / `.section-title` — section label system
+
+---
+
+## 8. App Structure — Three Tabs
+
+### Tab 1 — Portfolio
+
+1. **Insights box** (`st.container(border=True)`) — computed from live data on every load. Three signals: high-risk ACV at stake, unfulfilled high-risk count, top portfolio-wide churn driver.
+2. **Filter + sort controls** — risk tier filter, four sort options, caps display at 200 rows.
+3. **Custom HTML table** — Asset ID, Account, Expiring ACV, Tenure, Agent ROI, Top Churn Driver, Churn Risk pill.
+4. **Drill-down panel** — asset selectbox triggers `load_account_detail()`. Shows:
+   - Breadcrumb + asset metadata header
+   - Churn trend chart (left) + portfolio position distribution chart (right) — side by side inside `st.columns(2)`
+   - Sidebar card: Churn Probability, Top Driver, Fulfillment %, Agent ROI, Competitive Market
+
+### Tab 2 — Pipeline History
+
+- Four `st.metric` tiles with `help=` tooltips (Latest Run Assets, Avg Churn Prob, Median Churn Prob, High-Risk Rate)
+- Dual-axis bar+line chart: asset volume (bars, left axis) + avg churn prob / high-risk rate (lines, right axis)
+- `st.expander` with raw pipeline run dataframe
+
+### Tab 3 — Asset Explorer (Insights)
+
+- Feature importance chart (horizontal bars, colored by avg churn prob: red >0.7, charcoal 0.4–0.7, green <0.4)
+- Churn probability histogram with risk zone bands (red >70%, yellow 40–70%)
+- Feature × Avg Churn Prob breakdown table with CSV-compatible formatting
+
+---
+
+## 9. Charting Rules
+
+All chart functions live in `utils/plotting.py`. Key rules:
+
+1. **Legend placement**: always `y=-0.45, yanchor="bottom", xanchor="center", x=0.5` with `margin=dict(b=100)`. Never `y=-0.15` (overlaps x-axis title).
+2. **Reference lines on distributions**: use `add_shape` + `add_annotation` pairs with staggered `yref="paper"` y values (0.97, 0.87, 0.77, 0.67, 0.57). **Never `add_vline(..., annotation_text=...)`** — Plotly cannot vertically offset `add_vline` annotations, causing all labels to stack and overlap.
+3. **Transparent backgrounds**: `plot_bgcolor="rgba(0,0,0,0)"`, `paper_bgcolor="rgba(0,0,0,0)"` on all charts — SiS renders on a white card; the app background is `#F8F7F7`.
+4. **Hover templates**: always use `hovertemplate` with explicit format strings. Never rely on Plotly defaults.
+5. **Single-series charts**: use `BRAND = "#D92228"` as the single color. Not the default Plotly rainbow.
+
+---
+
+## 10. Data Loading — Caching Rules
+
+All query functions in `utils/queries.py` use `@st.cache_data(ttl=3600)`. Rules:
+
+- `load_portfolio_summary()` — returns a `dict` of 4 KPI scalars. Never returns a raw DataFrame.
+- `load_portfolio_accounts()` — returns the full base DataFrame (latest snapshot per asset, Unity-filtered, joined). Capped at 200 rows in the UI only, not in SQL.
+- `load_account_detail(asset_id)` — **takes a parameter**, which becomes the cache key. Returns all historical snapshots for one asset, ordered by date ASC for the trend chart.
+- `load_pipeline_runs()` — returns aggregated pipeline stats grouped by `CHURN_FLOW_ID` + `SNAPSHOT_DATE`. Wraps in `try/except` and returns an empty DataFrame on failure (Tab 2 shows a graceful message).
+- `load_feature_importance()` — groups the latest snapshot by `MOST_IMPORTANT_FEATURE`.
+
+---
+
+## 11. Deployment Checklist
+
+Before every deploy:
+
+- [ ] `environment.yml` has no version pins, no `python` entry, no `snowflake-connector-python`
+- [ ] `.streamlit/secrets.toml` is not staged (`git status` — must not appear)
+- [ ] `temp recommendations/` is not staged
+- [ ] All column references in Python use UPPERCASE strings
+- [ ] `snow streamlit deploy --replace --connection realtor` is run from inside `apps/team_datascience/mvip/unity_churn_dashboard/`
+- [ ] Post-deploy: open the production URL and confirm the app loads without a traceback
+
+---
+
+## 12. Development Workflow
+
+```bash
+# Local dev (auto-reload)
+make dev
+
+# Run tests
+make test
+
+# Lint
+make lint
+
+# Format
+make format
+
+# Deploy to SiS
+cd apps/team_datascience/mvip/unity_churn_dashboard
+snow streamlit deploy --replace --connection realtor
+```
+
+For `make dev` to work, `.streamlit/secrets.toml` must exist with valid `externalbrowser` credentials. On first run, Snowflake will open a browser window for Okta SSO authentication.
+
+---
+
+## 13. Known Limitations
+
+1. `PRODUCT_NAME` does not exist in Snowflake — it is derived from `PRODUCT2ID` via a Python dict. If new product IDs appear, `PRODUCT_MAPPING` in `queries.py` must be updated manually.
+2. `UNITY_CHURN_MODEL_PERFORMANCE` does not exist. Pipeline run stats are approximated from `ASSET_CHURN_HISTORY` grouped by `CHURN_FLOW_ID` + `SNAPSHOT_DATE`.
+3. The portfolio table is rendered as raw HTML (not `st.dataframe`) to support custom risk pills — this means clicking rows does not trigger a native Streamlit event. The drill-down uses a separate `st.selectbox`.
+4. `load_account_detail()` has a SQL injection risk if `asset_id` is not validated before interpolation into the query string. A whitelist check against `accounts_df["ASSET_ID"]` should be added.
+5. GitHub repo is under the personal account `janpolanrealtor` because the corporate org `MoveRDC` denied repository creation for contractor accounts at project inception.
+6. The Galano Grotesque Alt font is a corporate asset not available on Google Fonts — the app falls back to Inter in external/non-corporate browsers.
+
+---
+
+## 14. Governance
 
 This constitution supersedes all other ad-hoc practices. Amendments:
 
@@ -160,12 +512,12 @@ This constitution supersedes all other ad-hoc practices. Amendments:
 - MUST increment the version per semantic versioning rules:
   - **MAJOR**: Backward-incompatible governance or principle removals.
   - **MINOR**: New principle or materially expanded guidance.
-  - **PATCH**: Clarifications, wording, typo fixes.
-- MUST update all dependent templates if principles are added, removed,
-  or renamed.
+  - **PATCH**: Clarifications, wording, typo fixes, non-semantic refinements.
+- MUST update all dependent templates if principles are added, removed, or renamed.
 
 All PR reviews MUST verify compliance with this constitution.
-Justification of complexity is required whenever a principle is
-overridden.
+Justification of complexity is required whenever a principle is overridden.
 
-**Version**: 1.0.0 | **Ratified**: TODO(RATIFICATION_DATE): No original adoption date found — enter manually | **Last Amended**: 2026-06-22
+---
+
+**Version**: 2.0.0 | **Ratified**: 2026-06-22 | **Last Amended**: 2026-06-26
