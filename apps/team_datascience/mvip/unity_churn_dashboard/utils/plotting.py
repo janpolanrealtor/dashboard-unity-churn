@@ -240,6 +240,7 @@ def plot_quartile_indicator(
     tick_format: Plotly d3 format string for the x-axis ticks (e.g. ".0%", "$,.0f").
     """
     if fmt is None:
+
         def fmt(v):
             return f"{v:,.1f}"
 
@@ -262,8 +263,11 @@ def plot_quartile_indicator(
     # IQR range bar (thick line between Q1 and Q3)
     fig.add_shape(
         type="line",
-        x0=q1_val, x1=q3_val,
-        y0=0.5, y1=0.5, yref="paper",
+        x0=q1_val,
+        x1=q3_val,
+        y0=0.5,
+        y1=0.5,
+        yref="paper",
         line=dict(color=GRAY_200, width=8),
     )
 
@@ -274,7 +278,9 @@ def plot_quartile_indicator(
             y=[0.5],
             mode="markers",
             marker=dict(
-                symbol="triangle-up", size=14, color=q1_color,
+                symbol="triangle-up",
+                size=14,
+                color=q1_color,
                 line=dict(color="#fff", width=1),
             ),
             name=f"Q1: {fmt(q1_val)}",
@@ -290,7 +296,9 @@ def plot_quartile_indicator(
             y=[0.5],
             mode="markers",
             marker=dict(
-                symbol="triangle-up", size=14, color=q3_color,
+                symbol="triangle-up",
+                size=14,
+                color=q3_color,
                 line=dict(color="#fff", width=1),
             ),
             name=f"Q3: {fmt(q3_val)}",
@@ -313,7 +321,9 @@ def plot_quartile_indicator(
             y=[0.5],
             mode="markers",
             marker=dict(
-                symbol="circle", size=18, color=cur_color,
+                symbol="circle",
+                size=18,
+                color=cur_color,
                 line=dict(color="#fff", width=2),
             ),
             name=f"This asset: {fmt(current_val)}",
@@ -324,7 +334,9 @@ def plot_quartile_indicator(
 
     _xaxis = dict(
         range=[x_min, x_max],
-        showgrid=False, zeroline=False, showline=False,
+        showgrid=False,
+        zeroline=False,
+        showline=False,
         tickfont=dict(size=11, color=GRAY_700),
     )
     if tick_format:
@@ -335,12 +347,20 @@ def plot_quartile_indicator(
         title=dict(text=feature_name, font=dict(size=13, color=GRAY_1200), x=0),
         xaxis=_xaxis,
         yaxis=dict(
-            showgrid=False, zeroline=False, showline=False,
-            showticklabels=False, range=[0, 1],
+            showgrid=False,
+            zeroline=False,
+            showline=False,
+            showticklabels=False,
+            range=[0, 1],
         ),
         legend=dict(
-            orientation="h", yanchor="bottom", y=-0.6, xanchor="center", x=0.5,
-            font=dict(size=11), bgcolor="rgba(0,0,0,0)",
+            orientation="h",
+            yanchor="bottom",
+            y=-0.6,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=11),
+            bgcolor="rgba(0,0,0,0)",
         ),
         margin=dict(l=0, r=0, t=28, b=48),
         height=110,

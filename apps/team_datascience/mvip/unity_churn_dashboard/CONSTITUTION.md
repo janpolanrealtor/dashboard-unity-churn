@@ -221,7 +221,50 @@ These are the **only** two tables the dashboard reads. Schema was verified via `
 | `SNAPSHOT_DATE` | DATE | Must be aliased when joining |
 | `EXPIRY_DATE` | DATE | Must be aliased when joining |
 | `MONTH_OF_EXPIRY` | NUMBER | Must be aliased when joining |
-| *(~90 more columns)* | | Available but not currently used |
+| `SPILLOVER_PCT` | FLOAT | Confirmed at ordinal position 96; 0.0–1.0; lower is better for churn risk |
+| `FINAL_RATECARD` | FLOAT | Can be 0.0; causes `DISCOUNT_PCT` to compute as `-Infinity` — see §6.9 |
+| `DISCOUNT_PCT` | FLOAT | Derived column; can be `-Infinity` when `FINAL_RATECARD = 0.0` — sanitize in Python |
+| *(~106 more columns — 112 total)* | | Available but not currently used; 5 feature families documented in §6.8 |
+
+### 6.8 Feature Family Taxonomy (112 Columns)
+
+`MVIP_ASSET_RENEWALS_SNAPSHOTS` contains 112 confirmed columns organized into five families:
+
+| Family | Key Columns |
+|---|---|
+| **Financial & Discount** | `EXPIRING_VALUE_ACV`, `CURRENTACV`, `FINAL_RATECARD`, `DISCOUNT_PCT`, `DISCOUNT_PCT2`, `DISCOUNT_PCT3` |
+| **Lead Quality & Budgets** | `AVG_BUDGET`, `AVG_NON_LEASE_BUDGET`, `PCT_HIGH_INTENT_FINANCING_LEADS`, `PCT_HIGH_URGENCY_LIKELIHOOD_LEADS`, `PCT_HIGH_VALUE_PRICE_LEADS`, `PCT_SUB_150K_PRICE_LEADS` |
+| **Lead Delivery & Pollution** | `ASSET_TOTAL_DELIVERED`, `ASSET_TOTAL_LEASE_DELIVERED`, `ASSET_PCT_LEASE_DELIVERED`, `LIVE_TRANSFER_PCT`, `SPILLOVER_PCT` |
+| **Agent Behavioral** | `NUM_AGENTS`, `LEADS_PER_AGENT`, `AVG_SEC_TO_CLAIM_WINNER`, `AVG_DISPATCHES_SENT` |
+| **Sales Performance** | `TOTAL_TRANSACTIONS`, `ACTUAL_CLOSES`, `ACTUAL_CLOSE_RATE`, `PREDICTED_CLOSES`, `PREDICTED_CLOSE_RATE` |
+
+`AVG_SEC_TO_CLAIM_WINNER` (how fast agents claim leads) is a critical engagement signal.
+
+### 6.9 Known Data Anomalies
+
+**`DISCOUNT_PCT` = `-Infinity`:** When `FINAL_RATECARD = 0.0` (division by zero in the pipeline), `DISCOUNT_PCT` is stored as `-Infinity`. All DataFrames must be sanitized after retrieval:
+
+```python
+import numpy as np
+df = df.replace([np.inf, -np.inf], np.nan)
+```
+
+All formatters in `utils/formatting.py` must return `"—"` when encountering `NaN` or `None`.
+
+**Negative delivery counts:** `ZONE_TOTAL_DELIVERED` can be negative (e.g. `-23338`) due to SFDC transaction reversals. Display absolute values or handle gracefully in UI text.
+
+### 6.10 SHAP Feature Taxonomy (45 Drivers)
+
+The Unity Churn model outputs 45 distinct `MOST_IMPORTANT_FEATURE` values. They map to four user-facing categories:
+
+| Category | Example Values |
+|---|---|
+| **Tenure & Relationship** | `tenure`, `ct_successful_coaching_cases_by_account` |
+| **Fulfillment & Volume** | `sqrt_total_leads`, `fulfillment_rate` |
+| **Lead Quality** | `avg_budget`, `spillover_pct_of_live`, `live_transfer_pct`, `standardize(live_transfer_pct)` |
+| **Financial Performance** | `standardize(roi)`, `actual_ppl`, `expiring_acv` |
+
+Raw feature names include transformations (e.g. `standardize(live_transfer_pct)`, `sqrt_total_leads`) and interaction terms (e.g. `ct_successful_coaching_cases_by_account, sqrt_total_leads`).
 
 ### 6.3 Tables That Do NOT Exist
 
@@ -252,6 +295,22 @@ QUALIFY ROW_NUMBER() OVER (PARTITION BY ASSET_ID ORDER BY SNAPSHOT_DATE DESC) = 
 a.SNAPSHOT_DATE AS PREDICTION_DATE  -- from ASSET_CHURN_HISTORY
 -- do NOT select r.SNAPSHOT_DATE unless you alias it distinctly
 ```
+
+### 6.11 Verified Quartile Thresholds (Feature Metrics Range Indicators)
+
+These exact percentile values were computed via `PERCENTILE_CONT` from the production table using the Unity filter and latest-snapshot deduplication. They are the authoritative reference for the quartile indicator chart in the asset drill-down.
+
+| Feature | Column | Q1 (25th pct) | Median (50th pct) | Q3 (75th pct) | Directional Logic |
+|---|---|---|---|---|---|
+| Tenure | `TENURE` | `3.0` years | `5.0` years | `9.0` years | Higher is better |
+| Fulfillment % | `FULFILLMENT_PCT` | `1.105` (110.5%) | `1.312` (131.2%) | `1.517` (151.7%) | Higher is better |
+| Agent ROI per Lead | `ROI_PER_LEAD` | `-0.357` (-35.7%) | `-0.099` (-9.9%) | `0.243` (24.3%) | Higher is better |
+| Expiring ACV | `EXPIRING_VALUE_ACV` | `41962.80` | `99975.60` | `144441.72` | Higher is better |
+| Spillover % | `SPILLOVER_PCT` | `0.045` (4.5%) | `0.099` (9.9%) | `0.154` (15.4%) | **Lower is better** |
+
+**Spillover interpretation:** < 4.5% = excellent position (low churn risk); > 15.4% = high-risk zone (customer friction likely elevating churn probability). The directional logic is inverted relative to all other metrics — Q1 color = green, Q3 color = red.
+
+`SPILLOVER_PCT` is confirmed at ordinal position 96 in `MVIP_ASSET_RENEWALS_SNAPSHOTS`. The try/except fallback in `load_account_detail()` and `load_feature_distributions()` must be removed — query this column directly with no defensive fallback.
 
 ### 6.7 Columns That Do NOT Exist
 

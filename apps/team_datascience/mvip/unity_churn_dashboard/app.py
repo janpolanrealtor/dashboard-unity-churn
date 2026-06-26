@@ -360,14 +360,17 @@ with tab1:
     def churn_bar_html(p: float) -> str:
         if p > 0.7:
             bar_color = "#D92228"
+            track_color = "#E9E7E4"
         elif p > 0.4:
             bar_color = "#685700"
+            track_color = "#FFF2D0"
         else:
             bar_color = "#46A758"
+            track_color = "#E9E7E4"
         pct = p * 80
         circle_left = max(0, min(pct - 4, 72))
         return f"""
-        <div style="width:80px;height:6px;background:#E9E7E4;border-radius:3px;position:relative;">
+        <div style="width:80px;height:6px;background:{track_color};border-radius:3px;position:relative;">
           <div style="position:absolute;left:0;top:0;height:6px;width:{pct:.0f}px;background:{bar_color};border-radius:3px;"></div>
           <div style="position:absolute;left:{circle_left:.0f}px;top:-3px;width:12px;height:12px;background:{bar_color};border:2px solid #fff;border-radius:999px;box-shadow:0 0 2px rgba(0,0,0,0.2);"></div>
         </div>"""
@@ -392,8 +395,6 @@ with tab1:
         feat = row.get("MOST_IMPORTANT_FEATURE") or "—"
         trend = trend_arrow_html(row["CHURN_PROB"], row.get("PREV_CHURN_PROB"))
         renews = fmt_renews_in(row.get("DAYS_UNTIL_EXPIRY"))
-        if row.get("DAYS_UNTIL_EXPIRY") is not None and pd.isna(row["DAYS_UNTIL_EXPIRY"]):
-            renews = "—"
         rows_html += f"""
         <tr>
           <td>
