@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -9,7 +10,10 @@ PRODUCT_MAPPING = {
 UNITY_PRODUCT_ID = "01t5f000006sGgOAAU"
 
 
+@st.cache_resource
 def _get_session():
+    """Return (session, mode). Cached for the lifetime of the Streamlit process
+    so externalbrowser auth fires exactly once per local dev session."""
     try:
         from snowflake.snowpark.context import get_active_session
 
@@ -36,9 +40,13 @@ def _run_query(query: str) -> pd.DataFrame:
     session, mode = _get_session()
     if mode == "snowpark":
         return session.sql(query).to_pandas()
-    df = pd.read_sql(query, session)
-    session.close()
-    return df
+    # Use cursor directly to avoid the pandas SQLAlchemy deprecation warning
+    cur = session.cursor()
+    cur.execute(query)
+    cols = [d[0] for d in cur.description]
+    rows = cur.fetchall()
+    cur.close()
+    return pd.DataFrame(rows, columns=cols)
 
 
 # ── Core Unity churn dataset (latest snapshot per asset) ────────────────────
@@ -99,6 +107,9 @@ ORDER BY c.CHURN_PROB DESC
 def _load_base() -> pd.DataFrame:
     df = _run_query(_UNITY_CHURN_SQL)
     df["PRODUCT_NAME"] = df["PRODUCT2ID"].map(PRODUCT_MAPPING).fillna("Other Asset")
+    # FINAL_RATECARD = 0.0 causes DISCOUNT_PCT to be -Infinity in the pipeline.
+    # Sanitize here so all downstream formatters receive NaN, not ±Inf.
+    df = df.replace([np.inf, -np.inf], np.nan)
     return df
 
 
@@ -113,6 +124,70 @@ def load_portfolio_summary() -> dict:
     }
 
 
+_CALL_WORKLIST_SQL = """
+WITH latest_churn AS (
+    SELECT
+        a.ASSET_ID,
+        a.CHURN_PROB,
+        a.MOST_IMPORTANT_FEATURE,
+        a.EXPIRY_DATE,
+        a.SNAPSHOT_DATE AS PREDICTION_DATE
+    FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY a
+    INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
+        ON a.ASSET_ID = r.ID
+    WHERE r.PRODUCT2ID = '01t5f000006sGgOAAU'
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY a.ASSET_ID ORDER BY a.SNAPSHOT_DATE DESC) = 1
+),
+latest_renewals AS (
+    SELECT
+        ID,
+        NAME,
+        ROI_PER_LEAD,
+        EXPIRING_VALUE_ACV,
+        TENURE,
+        MVIP_ZONE_ID,
+        EXPIRY_DATE AS RENEWAL_EXPIRY_DATE
+    FROM TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS
+    WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY SNAPSHOT_DATE DESC) = 1
+),
+prev_churn AS (
+    SELECT ASSET_ID, CHURN_PROB AS PREV_CHURN_PROB
+    FROM (
+        SELECT ASSET_ID, CHURN_PROB,
+               ROW_NUMBER() OVER (PARTITION BY ASSET_ID ORDER BY SNAPSHOT_DATE DESC) AS rn
+        FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY
+    ) WHERE rn = 2
+)
+SELECT
+    c.ASSET_ID,
+    c.CHURN_PROB,
+    c.MOST_IMPORTANT_FEATURE,
+    c.EXPIRY_DATE,
+    c.PREDICTION_DATE,
+    r.NAME                                                       AS ACCOUNT_NAME,
+    r.ROI_PER_LEAD,
+    r.EXPIRING_VALUE_ACV,
+    r.TENURE,
+    DATEDIFF('day', CURRENT_DATE(), r.RENEWAL_EXPIRY_DATE::DATE) AS DAYS_UNTIL_EXPIRY,
+    COALESCE(m.NAME, 'National (VIP Package)')                   AS MARKET_NAME,
+    p.PREV_CHURN_PROB
+FROM latest_churn c
+INNER JOIN latest_renewals r               ON c.ASSET_ID = r.ID
+LEFT JOIN FIVETRAN_REFERRAL.PG_PUBLIC.LEAD_ZONE lz ON r.MVIP_ZONE_ID = lz.ID
+LEFT JOIN FIVETRAN_REFERRAL.PG_PUBLIC.MARKET m     ON lz.MARKET_ID = m.ID
+LEFT JOIN prev_churn p                             ON c.ASSET_ID = p.ASSET_ID
+ORDER BY c.CHURN_PROB DESC
+"""
+
+
+@st.cache_data(ttl=3600)
+def load_call_worklist() -> pd.DataFrame:
+    df = _run_query(_CALL_WORKLIST_SQL)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    return df
+
+
 @st.cache_data(ttl=3600)
 def load_portfolio_accounts() -> pd.DataFrame:
     return _load_base()
@@ -120,98 +195,81 @@ def load_portfolio_accounts() -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_account_detail(asset_id: str) -> pd.DataFrame:
-    """All snapshots for a single asset, ordered by date for trend chart.
-    Attempts to include SPILLOVER_PCT; silently omits it if the column doesn't exist."""
-    _join = f"""
-    FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY a
-    INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
-        ON a.ASSET_ID = r.ID
-    WHERE a.ASSET_ID = '{asset_id}'
-      AND r.PRODUCT2ID = '01t5f000006sGgOAAU'
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY r.ID ORDER BY r.SNAPSHOT_DATE DESC) = 1
-    ORDER BY a.SNAPSHOT_DATE ASC
-    """
-    try:
-        return _run_query(f"""
-            SELECT
-                a.ASSET_ID, a.CHURN_PROB, a.MOST_IMPORTANT_FEATURE,
-                a.SNAPSHOT_DATE, a.EXPIRY_DATE, a.MONTH_OF_EXPIRY,
-                r.ACCOUNTID, r.EXPIRING_VALUE_ACV, r.ROI_PER_LEAD,
-                r.FULFILLMENT_PCT, r.TENURE, r.IS_FULFILLED,
-                r.IS_COMPETITIVE_MARKET, r.SPILLOVER_PCT
-            {_join}
-        """)
-    except Exception:
-        return _run_query(f"""
-            SELECT
-                a.ASSET_ID, a.CHURN_PROB, a.MOST_IMPORTANT_FEATURE,
-                a.SNAPSHOT_DATE, a.EXPIRY_DATE, a.MONTH_OF_EXPIRY,
-                r.ACCOUNTID, r.EXPIRING_VALUE_ACV, r.ROI_PER_LEAD,
-                r.FULFILLMENT_PCT, r.TENURE, r.IS_FULFILLED,
-                r.IS_COMPETITIVE_MARKET
-            {_join}
-        """)
+    """All snapshots for a single asset, ordered by date for trend chart."""
+    df = _run_query(f"""
+        SELECT
+            a.ASSET_ID, a.CHURN_PROB, a.MOST_IMPORTANT_FEATURE,
+            a.SNAPSHOT_DATE, a.EXPIRY_DATE, a.MONTH_OF_EXPIRY,
+            r.ACCOUNTID, r.EXPIRING_VALUE_ACV, r.ROI_PER_LEAD,
+            r.FULFILLMENT_PCT, r.TENURE, r.IS_FULFILLED,
+            r.IS_COMPETITIVE_MARKET, r.SPILLOVER_PCT
+        FROM TEAM_DATASCIENCE.MVIP.ASSET_CHURN_HISTORY a
+        INNER JOIN TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS r
+            ON a.ASSET_ID = r.ID
+        WHERE a.ASSET_ID = '{asset_id}'
+          AND r.PRODUCT2ID = '01t5f000006sGgOAAU'
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY r.ID ORDER BY r.SNAPSHOT_DATE DESC) = 1
+        ORDER BY a.SNAPSHOT_DATE ASC
+    """)
+    return df.replace([np.inf, -np.inf], np.nan)
 
 
 @st.cache_data(ttl=3600)
 def load_feature_distributions() -> dict:
-    """Q1 and Q3 for TENURE and SPILLOVER_PCT across the latest Unity snapshot per asset.
-    Falls back to tenure-only if SPILLOVER_PCT column does not exist."""
-    _with_spillover = """
+    """Q1 and Q3 for all numeric feature columns across the latest Unity snapshot per asset.
+
+    Verified production thresholds (CONSTITUTION.md §6.11):
+      TENURE        Q1=3.0,     Q3=9.0      (higher is better)
+      FULFILLMENT   Q1=1.105,   Q3=1.517    (higher is better)
+      ROI_PER_LEAD  Q1=-0.357,  Q3=0.243    (higher is better)
+      EXPIRING_ACV  Q1=41962.80 Q3=144441.72(higher is better)
+      SPILLOVER_PCT Q1=0.045,   Q3=0.154    (lower is better)
+    """
+    query = """
     WITH deduped AS (
-        SELECT TENURE, SPILLOVER_PCT
+        SELECT TENURE, FULFILLMENT_PCT, ROI_PER_LEAD, EXPIRING_VALUE_ACV, SPILLOVER_PCT
         FROM TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS
         WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
         QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY SNAPSHOT_DATE DESC) = 1
     )
     SELECT
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE)        AS TENURE_Q1,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE)        AS TENURE_Q3,
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY SPILLOVER_PCT) AS SPILLOVER_Q1,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY SPILLOVER_PCT) AS SPILLOVER_Q3
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE)             AS TENURE_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE)             AS TENURE_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY FULFILLMENT_PCT)    AS FULFILLMENT_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY FULFILLMENT_PCT)    AS FULFILLMENT_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ROI_PER_LEAD)       AS ROI_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ROI_PER_LEAD)       AS ROI_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY EXPIRING_VALUE_ACV) AS ACV_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY EXPIRING_VALUE_ACV) AS ACV_Q3,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY SPILLOVER_PCT)      AS SPILLOVER_Q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY SPILLOVER_PCT)      AS SPILLOVER_Q3
     FROM deduped
     """
-    _tenure_only = """
-    WITH deduped AS (
-        SELECT TENURE
-        FROM TEAM_DATASCIENCE.PUBLIC.MVIP_ASSET_RENEWALS_SNAPSHOTS
-        WHERE PRODUCT2ID = '01t5f000006sGgOAAU'
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY ID ORDER BY SNAPSHOT_DATE DESC) = 1
-    )
-    SELECT
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY TENURE) AS TENURE_Q1,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY TENURE) AS TENURE_Q3
-    FROM deduped
-    """
+
     def _safe_float(val):
-        return float(val) if val is not None and str(val) != "nan" else None
+        return float(val) if val is not None and str(val) not in ("nan", "inf", "-inf") else None
+
+    _empty = {
+        k: None
+        for k in (
+            "TENURE_Q1",
+            "TENURE_Q3",
+            "FULFILLMENT_Q1",
+            "FULFILLMENT_Q3",
+            "ROI_Q1",
+            "ROI_Q3",
+            "ACV_Q1",
+            "ACV_Q3",
+            "SPILLOVER_Q1",
+            "SPILLOVER_Q3",
+        )
+    }
 
     try:
-        df = _run_query(_with_spillover)
-        r = df.iloc[0]
-        return {
-            "TENURE_Q1": float(r["TENURE_Q1"]),
-            "TENURE_Q3": float(r["TENURE_Q3"]),
-            "SPILLOVER_Q1": _safe_float(r.get("SPILLOVER_Q1")),
-            "SPILLOVER_Q3": _safe_float(r.get("SPILLOVER_Q3")),
-        }
+        r = _run_query(query).iloc[0]
+        return {k: _safe_float(r.get(k)) for k in _empty}
     except Exception:
-        try:
-            df = _run_query(_tenure_only)
-            r = df.iloc[0]
-            return {
-                "TENURE_Q1": float(r["TENURE_Q1"]),
-                "TENURE_Q3": float(r["TENURE_Q3"]),
-                "SPILLOVER_Q1": None,
-                "SPILLOVER_Q3": None,
-            }
-        except Exception:
-            return {
-                "TENURE_Q1": None,
-                "TENURE_Q3": None,
-                "SPILLOVER_Q1": None,
-                "SPILLOVER_Q3": None,
-            }
+        return _empty
 
 
 @st.cache_data(ttl=3600)

@@ -35,6 +35,17 @@ def metric_delta(current, previous) -> str | None:
     return f"{((current - previous) / previous):.1%}"
 
 
+def fmt_renews_in(days) -> str:
+    if days is None or (isinstance(days, float) and pd.isna(days)):
+        return "—"
+    days = int(days)
+    if days < 0:
+        return '<span style="color:#726A60">Expired</span>'
+    if days <= 15:
+        return f'<span style="color:#D92228;font-weight:bold">{days} days</span>'
+    return f'<span style="color:#3F3B36">{days} days</span>'
+
+
 # Aliases used by Streamlit .style.format() which calls with a single value
 format_probability = fmt_probability
 format_currency = fmt_currency

@@ -1,5 +1,12 @@
+import pandas as pd
 import streamlit as st
-from utils.formatting import fmt_currency, fmt_percentage, fmt_probability, fmt_tenure
+from utils.formatting import (
+    fmt_currency,
+    fmt_percentage,
+    fmt_probability,
+    fmt_renews_in,
+    fmt_tenure,
+)
 from utils.plotting import (
     asset_distribution_chart,
     churn_trend_chart,
@@ -10,6 +17,7 @@ from utils.plotting import (
 )
 from utils.queries import (
     load_account_detail,
+    load_call_worklist,
     load_feature_distributions,
     load_feature_importance,
     load_pipeline_runs,
@@ -223,6 +231,7 @@ st.markdown(
 try:
     portfolio_summary = load_portfolio_summary()
     accounts_df = load_portfolio_accounts()
+    worklist_df = load_call_worklist()
     pipeline_df = load_pipeline_runs()
     importance_df = load_feature_importance()
     feat_dist = load_feature_distributions()
@@ -326,7 +335,7 @@ with tab1:
             label_visibility="collapsed",
         )
 
-    df = accounts_df.copy()
+    df = worklist_df.copy()
 
     # Apply filter
     if filter_status == "High risk (>70%)":
@@ -348,46 +357,70 @@ with tab1:
 
     df = df.head(200)
 
-    def risk_pill(p):
+    def churn_bar_html(p: float) -> str:
         if p > 0.7:
-            return f'<span class="pill pill-high"><span class="pill-dot" style="background:#9A1A1E"></span>{fmt_probability(p)}</span>'
+            bar_color = "#D92228"
+            track_color = "#E9E7E4"
         elif p > 0.4:
-            return f'<span class="pill pill-medium"><span class="pill-dot" style="background:#685700"></span>{fmt_probability(p)}</span>'
+            bar_color = "#685700"
+            track_color = "#FFF2D0"
         else:
-            return f'<span class="pill pill-low"><span class="pill-dot" style="background:#2A7E3B"></span>{fmt_probability(p)}</span>'
+            bar_color = "#46A758"
+            track_color = "#E9E7E4"
+        pct = p * 80
+        circle_left = max(0, min(pct - 4, 72))
+        return f"""
+        <div style="width:80px;height:6px;background:{track_color};border-radius:3px;position:relative;">
+          <div style="position:absolute;left:0;top:0;height:6px;width:{pct:.0f}px;background:{bar_color};border-radius:3px;"></div>
+          <div style="position:absolute;left:{circle_left:.0f}px;top:-3px;width:12px;height:12px;background:{bar_color};border:2px solid #fff;border-radius:999px;box-shadow:0 0 2px rgba(0,0,0,0.2);"></div>
+        </div>"""
+
+    def trend_arrow_html(current: float, previous) -> str:
+        if previous is None or (isinstance(previous, float) and pd.isna(previous)):
+            return '<span style="color:#726A60">–</span>'
+        if current < previous:
+            return '<span style="color:#46A758;font-weight:600">↑</span>'
+        if current > previous:
+            return '<span style="color:#D92228;font-weight:600">↓</span>'
+        return '<span style="color:#726A60">–</span>'
 
     rows_html = ""
     for _, row in df.iterrows():
         acv = fmt_currency(row.get("EXPIRING_VALUE_ACV", 0))
-        roi = fmt_percentage(row.get("ROI_PER_LEAD", 0)) if row.get("ROI_PER_LEAD") else "—"
-        tenure = fmt_tenure(row.get("TENURE", 0))
+        acct = row.get("ACCOUNT_NAME") or "—"
+        market = row.get("MARKET_NAME") or "—"
+        acv_row = f"<div style='font-size:13px;font-weight:600;color:var(--gray-1200)'>{acv}</div>"
+        if row.get("ROI_PER_LEAD") is not None and row["ROI_PER_LEAD"] < 0.0:
+            acv_row += '<div style="color:#D92228;font-size:11px">below viability</div>'
         feat = row.get("MOST_IMPORTANT_FEATURE") or "—"
-        pill = risk_pill(row["CHURN_PROB"])
+        trend = trend_arrow_html(row["CHURN_PROB"], row.get("PREV_CHURN_PROB"))
+        renews = fmt_renews_in(row.get("DAYS_UNTIL_EXPIRY"))
         rows_html += f"""
         <tr>
-          <td><strong>{row["ASSET_ID"][:20]}</strong></td>
-          <td>{row.get("ACCOUNTID", "—")[:18]}</td>
-          <td>{acv}</td>
-          <td>{tenure}</td>
-          <td>{roi}</td>
-          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{feat}</td>
-          <td>{pill}</td>
+          <td>
+            <div style="font-size:13px;font-weight:600;color:var(--gray-1200)">{acct}</div>
+            <div style="font-size:11px;color:#726A60">{market}</div>
+          </td>
+          <td>{acv_row}</td>
+          <td>{churn_bar_html(row["CHURN_PROB"])}</td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            <span style="font-size:13px;color:var(--gray-1200)">{feat}</span> {trend}
+          </td>
+          <td>{renews}</td>
         </tr>"""
 
     st.markdown(
         f"""
     <div class="portfolio-wrap">
-      <div class="section-eyebrow">Unity Assets · {len(df):,} shown</div>
+      <div class="section-eyebrow">Call Worklist · {len(df):,} accounts</div>
       <table class="portfolio-table">
         <thead>
           <tr>
-            <th>Asset ID</th>
             <th>Account</th>
             <th>Expiring ACV</th>
-            <th>Tenure</th>
-            <th>Agent ROI</th>
-            <th>Top Churn Driver</th>
             <th>Churn Risk</th>
+            <th>Top Driver</th>
+            <th>Renews In</th>
           </tr>
         </thead>
         <tbody>{rows_html}</tbody>
@@ -412,9 +445,17 @@ with tab1:
             try:
                 detail_df = load_account_detail(selected_asset)
                 if not detail_df.empty:
+
+                    def _risk_pill(p):
+                        if p > 0.7:
+                            return f'<span class="pill pill-high"><span class="pill-dot" style="background:#9A1A1E"></span>{fmt_probability(p)}</span>'
+                        if p > 0.4:
+                            return f'<span class="pill pill-medium"><span class="pill-dot" style="background:#685700"></span>{fmt_probability(p)}</span>'
+                        return f'<span class="pill pill-low"><span class="pill-dot" style="background:#2A7E3B"></span>{fmt_probability(p)}</span>'
+
                     row = detail_df.iloc[0]
                     churn_p = row["CHURN_PROB"]
-                    pill_html = risk_pill(churn_p)
+                    pill_html = _risk_pill(churn_p)
 
                     col1, col2 = st.columns([2, 1])
                     with col1:
@@ -444,7 +485,7 @@ with tab1:
                         with ch1:
                             fig = churn_trend_chart(detail_df)
                             if fig:
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.plotly_chart(fig, width="stretch")
                             else:
                                 st.info(
                                     "Only one snapshot available for this asset — trend requires multiple dates."
@@ -455,7 +496,7 @@ with tab1:
                                 entity_value=churn_p,
                                 entity_label=selected_asset[:20],
                             )
-                            st.plotly_chart(dist_fig, use_container_width=True)
+                            st.plotly_chart(dist_fig, width="stretch")
 
                         # ── Feature Metrics ──────────────────────────────────
                         st.markdown(
@@ -463,47 +504,90 @@ with tab1:
                             '<div class="feat-metrics-title">Feature Metrics</div>',
                             unsafe_allow_html=True,
                         )
-                        _tenure_val = row.get("TENURE")
-                        _spillover_val = row.get("SPILLOVER_PCT")
 
-                        _fm1, _fm2 = st.columns(2)
-                        with _fm1:
-                            if (
-                                _tenure_val is not None
-                                and feat_dist.get("TENURE_Q1") is not None
-                                and feat_dist.get("TENURE_Q3") is not None
-                            ):
+                        # Each entry: (column_key, label, lower_is_better, fmt_fn, tick_format)
+                        _feat_specs = [
+                            (
+                                "TENURE",
+                                "Tenure (years)",
+                                False,
+                                lambda v: f"{v:.1f}y",
+                                None,
+                                "TENURE_Q1",
+                                "TENURE_Q3",
+                            ),
+                            (
+                                "FULFILLMENT_PCT",
+                                "Fulfillment %",
+                                False,
+                                lambda v: f"{v:.1%}",
+                                ".0%",
+                                "FULFILLMENT_Q1",
+                                "FULFILLMENT_Q3",
+                            ),
+                            (
+                                "ROI_PER_LEAD",
+                                "Agent ROI per Lead",
+                                False,
+                                lambda v: f"{v:.1%}",
+                                ".0%",
+                                "ROI_Q1",
+                                "ROI_Q3",
+                            ),
+                            (
+                                "EXPIRING_VALUE_ACV",
+                                "Expiring ACV",
+                                False,
+                                fmt_currency,
+                                "$,.0f",
+                                "ACV_Q1",
+                                "ACV_Q3",
+                            ),
+                            (
+                                "SPILLOVER_PCT",
+                                "Spillover %",
+                                True,
+                                lambda v: f"{v:.1%}",
+                                ".0%",
+                                "SPILLOVER_Q1",
+                                "SPILLOVER_Q3",
+                            ),
+                        ]
+
+                        for (
+                            _col_key,
+                            _label,
+                            _lib,
+                            _fmt_fn,
+                            _tick_fmt,
+                            _q1_key,
+                            _q3_key,
+                        ) in _feat_specs:
+                            _val = row.get(_col_key)
+                            _q1 = feat_dist.get(_q1_key)
+                            _q3 = feat_dist.get(_q3_key)
+                            if _val is None or _q1 is None or _q3 is None:
+                                continue
+                            _lc, _rc = st.columns([1, 3])
+                            with _lc:
+                                st.markdown(
+                                    f"<div style='padding-top:36px;font-size:13px;"
+                                    f"font-weight:600;color:var(--gray-1000)'>{_label}</div>",
+                                    unsafe_allow_html=True,
+                                )
+                            with _rc:
                                 st.plotly_chart(
                                     plot_quartile_indicator(
-                                        current_val=float(_tenure_val),
-                                        q1_val=feat_dist["TENURE_Q1"],
-                                        q3_val=feat_dist["TENURE_Q3"],
-                                        feature_name="Tenure (months)",
-                                        lower_is_better=False,
+                                        current_val=float(_val),
+                                        q1_val=_q1,
+                                        q3_val=_q3,
+                                        feature_name="",
+                                        lower_is_better=_lib,
+                                        fmt=_fmt_fn,
+                                        tick_format=_tick_fmt,
                                     ),
-                                    use_container_width=True,
+                                    width="stretch",
                                 )
-                            else:
-                                st.caption("Tenure data unavailable")
-
-                        with _fm2:
-                            if (
-                                _spillover_val is not None
-                                and feat_dist.get("SPILLOVER_Q1") is not None
-                                and feat_dist.get("SPILLOVER_Q3") is not None
-                            ):
-                                st.plotly_chart(
-                                    plot_quartile_indicator(
-                                        current_val=float(_spillover_val),
-                                        q1_val=feat_dist["SPILLOVER_Q1"],
-                                        q3_val=feat_dist["SPILLOVER_Q3"],
-                                        feature_name="Spillover %",
-                                        lower_is_better=True,
-                                    ),
-                                    use_container_width=True,
-                                )
-                            else:
-                                st.caption("Spillover % data unavailable")
 
                         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -567,7 +651,7 @@ with tab2:
         )
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        st.plotly_chart(pipeline_history_chart(pipeline_df), use_container_width=True)
+        st.plotly_chart(pipeline_history_chart(pipeline_df), width="stretch")
 
         with st.expander("Raw pipeline run data"):
             st.dataframe(
@@ -578,7 +662,7 @@ with tab2:
                         "HIGH_RISK_RATE": fmt_probability,
                     }
                 ),
-                use_container_width=True,
+                width="stretch",
             )
     else:
         st.info("No pipeline runs found for Unity assets.")
@@ -593,7 +677,7 @@ with tab3:
         st.markdown('<div class="section-eyebrow">Model signals</div>', unsafe_allow_html=True)
         st.markdown('<div class="section-title">Top Churn Drivers</div>', unsafe_allow_html=True)
         if not importance_df.empty:
-            st.plotly_chart(feature_importance_chart(importance_df), use_container_width=True)
+            st.plotly_chart(feature_importance_chart(importance_df), width="stretch")
         else:
             st.info("No feature importance data available.")
 
@@ -603,7 +687,7 @@ with tab3:
             '<div class="section-title">Churn Probability Spread</div>', unsafe_allow_html=True
         )
         if not accounts_df.empty:
-            st.plotly_chart(survival_distribution_chart(accounts_df), use_container_width=True)
+            st.plotly_chart(survival_distribution_chart(accounts_df), width="stretch")
         else:
             st.info("No distribution data available.")
 
@@ -623,6 +707,6 @@ with tab3:
                     "Assets Affected": "{:,}",
                 }
             ),
-            use_container_width=True,
+            width="stretch",
             height=400,
         )
